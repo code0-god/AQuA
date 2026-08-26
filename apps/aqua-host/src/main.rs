@@ -1,5 +1,5 @@
-use aqua_candle::{host_to_tensor, tensor_to_host};
-use candle_core::{Device, Tensor, DType};
+use aqua_candle::tensor_to_host;
+use candle_core::{DType, Device, Tensor};
 use std::error::Error;
 
 fn main() -> Result<(), Box<dyn Error>> {

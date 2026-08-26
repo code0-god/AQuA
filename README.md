@@ -28,29 +28,28 @@ ExSIA and accelerator operations are not implemented yet.
 ## Architecture
 
 ```text
-Candle CPU Tensor / Model / Reference Execution
-                     |
-                     v
-                 aqua-candle
-                     |
-                     v
-                 aqua-runtime
-                     |
-                     v
-                aqua-protocol
-                     |
-          interchangeable boundary
-                     |
-                     v
-     Bluesim / Verilator / physical FPGA
+Candle floating activation
+(F16 / BF16 / F32 / F64 / ...)
+             |
+             | aqua-candle
+             | canonicalize to F32
+             v
+        HostTensor
+   contiguous F32 values
+             |
+             v
+        AQuA Runtime
+             |
+             v
+  BSV Accelerator (ExSIA later)
 ```
 
 - `aqua-protocol`: Candle-independent tensor and command semantics.
 - `aqua-runtime`: accelerator execution boundary, independent of Candle and
   transport.
-- `aqua-candle`: explicit adapter between CPU-resident Candle tensors and AQuA
-  host tensors.
-- `aqua-host`: smoke test for Candle path dependency and tensor round-trip.
+- `aqua-candle`: converts supported CPU-resident Candle floating-point
+  activations into canonical contiguous F32 AQuA host tensors.
+- `aqua-host`: smoke test for Candle activation canonicalization.
 - `hw/bsv`: BSV source and testbench boundary.
 
 Protocol semantics are separate from transport. UART, PCIe, simulator APIs,
@@ -82,6 +81,7 @@ git submodule update --init --recursive
 cargo fmt --check
 cargo check --workspace
 cargo test --workspace
+cargo clippy --workspace --all-targets -- -D warnings
 cargo run -p aqua-host
 ```
 

@@ -13,15 +13,13 @@ pub fn tensor_to_host(tensor: &Tensor) -> Result<HostTensor, AdapterError> {
         return Err(AdapterError::UnsupportedDType(tensor.dtype()));
     }
 
-    let contiguous = tensor.contiguous()?;
-
-    let normalized = if contiguous.dtype() == DType::F32 {
-        contiguous
+    let normalized = if tensor.dtype() == DType::F32 {
+        tensor.clone()
     } else {
-        contiguous.to_dtype(DType::F32)?
+        tensor.to_dtype(DType::F32)?
     };
 
-    let values = normalized.flatten_all()?.to_vec1::<f32>()?;
+    let values = normalized.contiguous()?.flatten_all()?.to_vec1::<f32>()?;
     Ok(HostTensor::f32(tensor.dims().to_vec(), values)?)
 }
 
