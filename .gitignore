@@ -1,0 +1,4 @@
+/target/
+*.bo
+*.ba
+*.so

@@ -1,0 +1,13 @@
+[package]
+name = "aqua-candle"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+aqua-protocol = { path = "../aqua-protocol" }
+aqua-runtime = { path = "../aqua-runtime" }
+candle-core = { path = "../../third_party/candle/candle-core" }
+
+[lib]
+path = "src/lib.rs"

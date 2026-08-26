@@ -1,0 +1,11 @@
+[package]
+name = "aqua-runtime"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+aqua-protocol = { path = "../aqua-protocol" }
+
+[lib]
+path = "src/lib.rs"
