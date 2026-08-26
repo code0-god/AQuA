@@ -1,6 +1,6 @@
 use aqua_candle::{host_to_tensor, tensor_to_host};
 use aqua_protocol::AquaDType;
-use candle_core::{Device, Tensor};
+use candle_core::{Device, Tensor, DType};
 
 #[test]
 fn round_trips_cpu_f32_tensor() -> Result<(), Box<dyn std::error::Error>> {
@@ -22,5 +22,23 @@ fn round_trips_cpu_f32_tensor() -> Result<(), Box<dyn std::error::Error>> {
         source.flatten_all()?.to_vec1::<f32>()?,
         restored.flatten_all()?.to_vec1::<f32>()?
     );
+    Ok(())
+}
+
+#[test]
+fn canonicalizes_f16_to_host_f32() -> Result<(), Box<dyn std::error::Error>> {
+    let source = Tensor::from_vec(
+        vec![0.0_f32, 1.0, 2.0, 3.0],
+        (2, 2),
+        &Device::Cpu,
+    )?
+    .to_dtype(DType::F16)?;
+
+    let host = tensor_to_host(&source)?;
+
+    assert_eq!(host.desc.dtype, AquaDType::F32);
+    assert_eq!(host.desc.shape, [2, 2]);
+    assert_eq!(host.data, [0.0, 1.0, 2.0, 3.0]);
+
     Ok(())
 }

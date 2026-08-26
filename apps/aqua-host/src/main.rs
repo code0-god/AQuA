@@ -1,5 +1,5 @@
 use aqua_candle::{host_to_tensor, tensor_to_host};
-use candle_core::{Device, Tensor};
+use candle_core::{Device, Tensor, DType};
 use std::error::Error;
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -11,18 +11,17 @@ fn main() -> Result<(), Box<dyn Error>> {
         vec![0.0_f32, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0],
         (2, 4),
         &Device::Cpu,
-    )?;
-    let host = tensor_to_host(&tensor)?;
-    let restored = host_to_tensor(&host)?;
+    )?
+    .to_dtype(DType::BF16)?;
 
-    if tensor.flatten_all()?.to_vec1::<f32>()? != restored.flatten_all()?.to_vec1::<f32>()? {
-        return Err("Candle tensor round-trip changed values".into());
-    }
+    let source_dtype = tensor.dtype();
+    let host = tensor_to_host(&tensor)?;
 
     println!("AQuA host initialized");
     println!("Candle device: CPU");
+    println!("Candle source dtype: {:?}", source_dtype);
+    println!("AQuA canonical dtype: {:?}", host.desc.dtype);
     println!("Tensor shape: {:?}", host.desc.shape);
-    println!("Tensor dtype: {:?}", host.desc.dtype);
     println!("Element count: {}", host.desc.len);
     Ok(())
 }

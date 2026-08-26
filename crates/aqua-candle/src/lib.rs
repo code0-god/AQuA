@@ -9,11 +9,19 @@ pub fn tensor_to_host(tensor: &Tensor) -> Result<HostTensor, AdapterError> {
     if tensor.device().location() != DeviceLocation::Cpu {
         return Err(AdapterError::CpuTensorRequired);
     }
-    if tensor.dtype() != DType::F32 {
+    if !tensor.dtype().is_float() {
         return Err(AdapterError::UnsupportedDType(tensor.dtype()));
     }
 
-    let values = tensor.contiguous()?.flatten_all()?.to_vec1::<f32>()?;
+    let contiguous = tensor.contiguous()?;
+
+    let normalized = if contiguous.dtype() == DType::F32 {
+        contiguous
+    } else {
+        contiguous.to_dtype(DType::F32)?
+    };
+
+    let values = normalized.flatten_all()?.to_vec1::<f32>()?;
     Ok(HostTensor::f32(tensor.dims().to_vec(), values)?)
 }
 
