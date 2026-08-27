@@ -35,5 +35,8 @@ mod tests {
             ReferenceExsia::new().execute(&input),
             Err(ExsiaError::ReferenceNotImplemented)
         ));
+
+        assert_eq!(input.len(), 32);
+        assert!(!input.is_empty());
     }
 }

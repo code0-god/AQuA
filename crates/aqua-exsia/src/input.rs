@@ -45,4 +45,8 @@ impl<'a> ExsiaInput<'a> {
     pub fn len(&self) -> usize {
         self.tensor.desc.len // descriptor에 저장된 element count 반환.
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.values().is_empty()
+    }
 }
