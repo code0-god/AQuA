@@ -1,26 +1,28 @@
 /// Sparse residual for an outlier selected by ExSIA.
 ///
-/// 'block_index' identifies the ExSIA block containing the outlier.
-/// 'element_index' identifies the element within that block.
-/// 'residual' stores the signed integer residual associated with that element.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+/// `block_index` identifies the ExSIA block containing the outlier.
+/// `element_index` identifies the element within that block.
+/// `residual` stores the signed integer residual associated with that element.
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)] // 복사 가능, {:?} 출력 가능, == / != 비교 가능.
 pub struct ResidualEntry {
-    block_index: usize,
-    element_index: usize,
-    residual: i32,
+    block_index: usize,   // outlier가 속한 block 번호.
+    element_index: usize, // block 내부의 element 번호.
+    residual: i32,        // signed integer residual 값.
 }
 
 impl ResidualEntry {
     pub const fn new(block_index: usize, element_index: usize, residual: i32) -> Self {
+        // Self = ResidualEntry.
         Self {
-            block_index,
+            block_index, // `block_index: block_index`의 축약형.
             element_index,
             residual,
         }
     }
 
     pub const fn block_index(&self) -> usize {
-        self.block_index
+        self.block_index // usize는 Copy이므로 값을 복사해서 반환.
     }
 
     pub const fn element_index(&self) -> usize {
@@ -28,54 +30,54 @@ impl ResidualEntry {
     }
 
     pub const fn residual(&self) -> i32 {
-        self.residual
+        self.residual // i32 역시 Copy.
     }
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Residuals {
-    entries: Vec<ResidualEntry>,
+    entries: Vec<ResidualEntry>, // 여러 residual entry를 동적 배열에 저장.
 }
 
 impl Residuals {
     pub const fn new() -> Self {
         Self {
-            entries: Vec::new(),
+            entries: Vec::new(), // 빈 Vec 생성. len=0, capacity=0.
         }
     }
 
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
-            entries: Vec::with_capacity(capacity),
+            entries: Vec::with_capacity(capacity), // 미리 capacity만큼 메모리 공간 확보.
         }
     }
 
     pub fn push(&mut self, entry: ResidualEntry) {
-        self.entries.push(entry);
+        self.entries.push(entry); // Vec 끝에 entry 추가.
     }
 
     pub fn len(&self) -> usize {
-        self.entries.len()
+        self.entries.len() // 현재 저장된 entry 개수.
     }
 
     pub fn is_empty(&self) -> bool {
-        self.entries.is_empty()
+        self.entries.is_empty() // entry가 0개면 true.
     }
 
     pub fn entries(&self) -> &[ResidualEntry] {
-        &self.entries
+        &self.entries // Vec을 소유권 이동 없이 slice로 빌려줌.
     }
 
     pub fn iter(&self) -> impl Iterator<Item = &ResidualEntry> {
-        self.entries.iter()
+        self.entries.iter() // entry를 하나씩 &ResidualEntry로 순회.
     }
 
     pub fn clear(&mut self) {
-        self.entries.clear();
+        self.entries.clear(); // 모든 element 제거. Residuals는 계속 사용 가능.
     }
 
     pub fn into_entries(self) -> Vec<ResidualEntry> {
-        self.entries
+        self.entries // self의 ownership을 받아 내부 Vec 자체를 반환.
     }
 }
 
