@@ -14,9 +14,7 @@ impl fmt::Display for ExsiaError {
                 write!(formatter, "invalid ExSIA input: {error}")
             }
             Self::ReferenceNotImplemented => {
-                formatter.write_str(
-                    "canonical software ExSIA reference is not implemented yet",
-                )
+                formatter.write_str("canonical software ExSIA reference is not implemented yet")
             }
         }
     }

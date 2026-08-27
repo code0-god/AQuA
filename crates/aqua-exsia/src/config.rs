@@ -3,7 +3,7 @@ pub const EXSIA_BLOCK_SIZE: usize = 32;
 
 /// Integer precision produced by ExSIA.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ExsiaPrecision{
+pub enum ExsiaPrecision {
     I4,
     I8,
     I16,
@@ -20,7 +20,7 @@ impl ExsiaPrecision {
 }
 
 /// ExSIA execution configuration.
-/// 
+///
 /// Keep this deliberately small untill the canonical software implementation
 /// has been fully traced.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
