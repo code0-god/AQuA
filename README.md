@@ -11,10 +11,18 @@ Current milestone:
 Candle Host
      |
      v
-AQuA Runtime
+Canonical F32 HostTensor
      |
-     v
-BSV ExSIA Quantizer
+     +--------------------+
+     |                    |
+     v                    v
+Software ExSIA       BSV ExSIA
+Reference            Quantizer
+     |                    |
+     +---------+----------+
+               |
+               v
+        Bit-exact validation
 ```
 
 First research target:
@@ -23,7 +31,9 @@ First research target:
 > implementation of ExSIA and validate its quantization output bit-exactly
 > against the canonical software ExSIA implementation.
 
-ExSIA and accelerator operations are not implemented yet.
+The AQuA host/runtime boundary and the software-side ExSIA domain are being
+established first. The canonical ExSIA quantization algorithm and BSV datapath
+are not implemented yet.
 
 ## Architecture
 
@@ -37,23 +47,104 @@ Candle floating activation
         HostTensor
    contiguous F32 values
              |
-             v
-        AQuA Runtime
-             |
-             v
-  BSV Accelerator (ExSIA later)
+      +------+------+
+      |             |
+      v             v
+ aqua-exsia     AQuA Runtime
+ software           |
+ semantics          v
+              BSV Accelerator
+               (ExSIA later)
 ```
 
-- `aqua-protocol`: Candle-independent tensor and command semantics.
-- `aqua-runtime`: accelerator execution boundary, independent of Candle and
-  transport.
-- `aqua-candle`: converts supported CPU-resident Candle floating-point
+* `aqua-protocol`: Candle-independent tensor and common protocol semantics.
+* `aqua-runtime`: accelerator execution boundary, independent of Candle,
+  ExSIA semantics, and transport.
+* `aqua-candle`: converts supported CPU-resident Candle floating-point
   activations into canonical contiguous F32 AQuA host tensors.
-- `aqua-host`: smoke test for Candle activation canonicalization.
-- `hw/bsv`: BSV source and testbench boundary.
+* `aqua-exsia`: owns ExSIA-specific software contracts and the canonical
+  reference implementation, independent of Candle and hardware transport.
+* `aqua-host`: smoke test for Candle activation canonicalization.
+* `hw/bsv`: BSV source and testbench boundary for hardware implementations.
+
+The intended dependency and execution boundaries are:
+
+```text
+Candle
+   |
+   v
+aqua-candle
+   |
+   v
+HostTensor (F32)
+   |
+   +------------------------+
+   |                        |
+   v                        v
+aqua-exsia              aqua-runtime
+(reference)                 |
+                            v
+                       BSV backend
+```
 
 Protocol semantics are separate from transport. UART, PCIe, simulator APIs,
 and board support are not part of this milestone.
+
+## ExSIA software boundary
+
+`aqua-exsia` owns ExSIA-specific software semantics.
+
+Its input is the validated canonical F32 `HostTensor` produced at the AQuA
+host boundary:
+
+```text
+HostTensor F32
+      |
+      v
+  ExSIA input
+      |
+      v
+Canonical software ExSIA
+      |
+      v
+Quantized activation result
+```
+
+The canonical reference implementation must be derived from the exact ExSIA
+path used for model-quality evaluation. AQuA does not use an approximate or
+reconstructed ExSIA algorithm as a substitute.
+
+Until those semantics are frozen, the software boundary may exist without
+implementing quantization arithmetic.
+
+The future BSV implementation will consume the same canonical input semantics
+and will be validated against the software reference.
+
+## Tensor boundary
+
+AQuA currently treats framework-visible activation input and accelerator
+internal quantized representation as separate domains.
+
+```text
+Host / Candle domain
+--------------------
+floating-point activation
+        |
+        | canonicalize
+        v
+F32 HostTensor
+
+Accelerator domain
+------------------
+ExSIA
+        |
+        +--> I4
+        +--> I8
+        `--> I16
+```
+
+`I4`, `I8`, and `I16` are accelerator-side quantized representations. Their
+existence does not imply that AQuA accepts integer `HostTensor` inputs.
 
 ## Candle policy
 
@@ -87,13 +178,15 @@ cargo run -p aqua-host
 
 ## Roadmap
 
-1. Freeze canonical software ExSIA semantics and golden vectors from real
-   Candle LLM activations.
-2. Implement bit-exact BSV ExSIA and compare against software.
-3. Add systolic-array execution and return results to Candle.
-4. Add accumulator and transformer nonlinear operations.
-5. Keep intermediate tensors accelerator-resident across operation sequences.
+1. Establish the ExSIA software domain and freeze the canonical ExSIA
+   semantics used for model-quality evaluation.
+2. Generate golden vectors from real Candle LLM activations.
+3. Define the canonical ExSIA quantized output and metadata contract.
+4. Implement bit-exact BSV ExSIA and compare against the software reference.
+5. Connect ExSIA directly to systolic-array execution.
+6. Add accumulator and transformer nonlinear operations.
+7. Keep intermediate tensors accelerator-resident across operation sequences.
 
-No ExSIA, ExSIF, systolic array, transformer operation, KV cache,
-accelerator-resident tensor manager, UART, PCIe, DMA, or FPGA board support is
-implemented in this scaffold.
+No canonical ExSIA quantization implementation, ExSIF, systolic array,
+transformer operation, KV cache, accelerator-resident tensor manager, UART,
+PCIe, DMA, or FPGA board support is implemented yet.

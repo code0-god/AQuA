@@ -41,6 +41,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "aqua-exsia"
+version = "0.1.0"
+dependencies = [
+ "aqua-runtime",
+]
+
+[[package]]
 name = "aqua-host"
 version = "0.1.0"
 dependencies = [
