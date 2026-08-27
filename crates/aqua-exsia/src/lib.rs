@@ -3,6 +3,7 @@
 //! This crate owns ExSIA-specific semantics.
 //! It is independent of Candle, transport, and BSV implementation details.
 
+mod algorithm;
 mod config;
 mod error;
 mod input;
