@@ -1,5 +1,8 @@
-/// Canonical ExSIA activation block size used bt AQuA.
+/// Canonical ExSIA activation block size used by AQuA.
 pub const EXSIA_BLOCK_SIZE: usize = 32;
+
+/// Canonical ExSIA sigma threshold used by AQuA.
+pub const EXSIA_SIGMA: i32 = 2;
 
 /// Integer precision produced by ExSIA.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -17,12 +20,19 @@ impl ExsiaPrecision {
             Self::I16 => 16,
         }
     }
+
+    pub const fn rho(self) -> i16 {
+        // Signed N-bit quantization의 최대 magnitude가
+        // 대략 2^(N-1)에 맞도록 exponent offset을 설정.
+        //
+        // I4  -> rho = 2
+        // I8  -> rho = 6
+        // I16 -> rho = 14
+        self.bits() as i16 - 2
+    }
 }
 
 /// ExSIA execution configuration.
-///
-/// Keep this deliberately small untill the canonical software implementation
-/// has been fully traced.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ExsiaConfig {
     pub precision: ExsiaPrecision,
@@ -36,11 +46,19 @@ impl ExsiaConfig {
             block_size: EXSIA_BLOCK_SIZE,
         }
     }
+
+    pub const fn rho(self) -> i16 {
+        self.precision.rho()
+    }
+
+    pub const fn sigma(self) -> i32 {
+        EXSIA_SIGMA
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{ExsiaConfig, ExsiaPrecision, EXSIA_BLOCK_SIZE};
+    use super::{ExsiaConfig, ExsiaPrecision, EXSIA_BLOCK_SIZE, EXSIA_SIGMA};
 
     #[test]
     fn uses_canonical_block_size() {
@@ -55,5 +73,20 @@ mod tests {
         assert_eq!(ExsiaPrecision::I4.bits(), 4);
         assert_eq!(ExsiaPrecision::I8.bits(), 8);
         assert_eq!(ExsiaPrecision::I16.bits(), 16);
+    }
+
+    #[test]
+    fn reports_precision_rho() {
+        assert_eq!(ExsiaPrecision::I4.rho(), 2);
+        assert_eq!(ExsiaPrecision::I8.rho(), 6);
+        assert_eq!(ExsiaPrecision::I16.rho(), 14);
+    }
+
+    #[test]
+    fn uses_canonical_sigma() {
+        let config = ExsiaConfig::new(ExsiaPrecision::I8);
+
+        assert_eq!(config.sigma(), EXSIA_SIGMA);
+        assert_eq!(config.sigma(), 2);
     }
 }
