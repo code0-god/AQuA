@@ -30,6 +30,22 @@ impl ExsiaPrecision {
         // I16 -> rho = 14
         self.bits() as i16 - 2
     }
+
+    pub const fn qmin(self) -> i32 {
+        match self {
+            Self::I4 => -8,
+            Self::I8 => -128,
+            Self::I16 => -32_768,
+        }
+    }
+
+    pub const fn qmax(self) -> i32 {
+        match self {
+            Self::I4 => 7,
+            Self::I8 => 127,
+            Self::I16 => 32_767,
+        }
+    }
 }
 
 /// ExSIA execution configuration.
@@ -53,6 +69,14 @@ impl ExsiaConfig {
 
     pub const fn sigma(self) -> i32 {
         EXSIA_SIGMA
+    }
+
+    pub const fn qmin(self) -> i32 {
+        self.precision.qmin()
+    }
+
+    pub const fn qmax(self) -> i32 {
+        self.precision.qmax()
     }
 }
 
@@ -88,5 +112,17 @@ mod tests {
 
         assert_eq!(config.sigma(), EXSIA_SIGMA);
         assert_eq!(config.sigma(), 2);
+    }
+
+    #[test]
+    fn reports_signed_quantization_range() {
+        assert_eq!(ExsiaPrecision::I4.qmin(), -8);
+        assert_eq!(ExsiaPrecision::I4.qmax(), 7);
+
+        assert_eq!(ExsiaPrecision::I8.qmin(), -128);
+        assert_eq!(ExsiaPrecision::I8.qmax(), 127);
+
+        assert_eq!(ExsiaPrecision::I16.qmin(), -32_768);
+        assert_eq!(ExsiaPrecision::I16.qmax(), 32_767);
     }
 }
