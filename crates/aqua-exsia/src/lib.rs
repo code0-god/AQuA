@@ -14,6 +14,6 @@ mod residual;
 pub use config::{ExsiaConfig, ExsiaPrecision, EXSIA_BLOCK_SIZE};
 pub use error::ExsiaError;
 pub use input::ExsiaInput;
-pub use output::ExsiaOutput;
+pub use output::{ExsiaOutput, QuantizedValues};
 pub use reference::ReferenceExsia;
 pub use residual::{ResidualEntry, Residuals};

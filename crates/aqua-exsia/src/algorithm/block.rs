@@ -4,9 +4,9 @@ use crate::{ExsiaConfig, ExsiaError, EXSIA_BLOCK_SIZE};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct BlockResult {
-    pub(crate) quantized: Vec<i32>, // 최종 block scale에서 표현된 wide integer activation.
-    pub(crate) exponent: i16,       // 최종 block exponent e_b.
-    pub(crate) outlier_mask: u32,   // 선택된 outlier 위치. bit i = element i.
+    pub(crate) wide: Vec<i32>, // 최종 block scale에서 표현된 wide integer activation.
+    pub(crate) exponent: i16,  // 최종 block exponent e_b.
+    pub(crate) outlier_mask: u32, // 선택된 outlier 위치. bit i = element i.
 }
 
 pub(crate) fn mask_set(mask: &mut u32, index: usize) {
@@ -109,7 +109,7 @@ pub(crate) fn quantize_block(
      */
 
     let theta_pre = math::exp_to_theta(e_pre, config.rho());
-    let mut quantized = Vec::with_capacity(values.len());
+    let mut wide = Vec::with_capacity(values.len());
 
     let mut stats = SigmaStats {
         sum: 0,
@@ -120,7 +120,7 @@ pub(crate) fn quantize_block(
     for i in 0..values.len() {
         let q = math::quantize_i32(values[i], theta_pre);
 
-        quantized.push(q);
+        wide.push(q);
 
         if mask_contains(outlier_mask, i) {
             continue;
@@ -152,7 +152,7 @@ pub(crate) fn quantize_block(
             continue;
         }
 
-        if math::is_sigma_outlier(quantized[i], &stats, config.sigma()) {
+        if math::is_sigma_outlier(wide[i], &stats, config.sigma()) {
             // integer-domain sigma detector가 선택한 element를
             // 최종 outlier mask에 추가.
             mask_set(&mut outlier_mask, i);
@@ -193,12 +193,12 @@ pub(crate) fn quantize_block(
 
     if has_integer_outlier && theta_final != theta_pre {
         for i in 0..values.len() {
-            quantized[i] = math::quantize_i32(values[i], theta_final);
+            wide[i] = math::quantize_i32(values[i], theta_final);
         }
     }
 
     Ok(BlockResult {
-        quantized,
+        wide,
         exponent: block_exp,
         outlier_mask,
     })
@@ -228,7 +228,7 @@ mod tests {
 
         // I8 rho=6, theta=0-6=-6.
         // 1.0 × 2^6 = 64.
-        assert_eq!(result.quantized[1], 64);
+        assert_eq!(result.wide[1], 64);
     }
 
     #[test]
@@ -284,7 +284,7 @@ mod tests {
 
         // final theta = 0 - rho(6) = -6.
         // 따라서 1.0은 최종적으로 64가 되어야 함.
-        assert_eq!(result.quantized[2], 64);
+        assert_eq!(result.wide[2], 64);
     }
 
     #[test]
@@ -297,7 +297,7 @@ mod tests {
 
         // Rust reference에서는 logical element만 반환하고,
         // hardware padding은 이후 BSV execution contract에서 처리.
-        assert_eq!(result.quantized.len(), 17);
+        assert_eq!(result.wide.len(), 17);
     }
 
     #[test]

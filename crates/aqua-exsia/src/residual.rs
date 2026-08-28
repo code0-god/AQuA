@@ -56,6 +56,10 @@ impl Residuals {
         self.entries.push(entry); // Vec 끝에 entry 추가.
     }
 
+    pub(crate) fn append(&mut self, other: &mut Self) {
+        self.entries.append(&mut other.entries);
+    }
+
     pub fn len(&self) -> usize {
         self.entries.len() // 현재 저장된 entry 개수.
     }
