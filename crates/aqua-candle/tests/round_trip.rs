@@ -1,6 +1,18 @@
 use aqua_candle::{host_to_tensor, tensor_to_host, AdapterError};
 use aqua_protocol::AquaDType;
+use aqua_runtime::RuntimeError;
 use candle_core::{DType, Device, Tensor};
+use std::error::Error;
+
+#[test]
+fn chains_wrapped_adapter_error_source() {
+    let error = AdapterError::from(RuntimeError::ElementCountMismatch {
+        expected: 2,
+        actual: 1,
+    });
+
+    assert!(error.source().is_some());
+}
 
 #[test]
 fn preserves_contiguous_cpu_f32_tensor() -> Result<(), Box<dyn std::error::Error>> {

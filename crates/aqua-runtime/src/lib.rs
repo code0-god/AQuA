@@ -53,7 +53,8 @@ impl HostTensor {
     }
 }
 
-pub trait AquaExecutor {
+/// Host-tensor execution boundary independent of Candle operation dispatch.
+pub trait HostTensorExecutor {
     // 구현체가 따라야 하는 공통 실행 interface.
     type Error: Error + Send + Sync + 'static; // associated type + trait bounds.
     type Output;

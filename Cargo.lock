@@ -35,6 +35,7 @@ checksum = "683d7910e743518b0e34f1186f92494becacb047c7b6bf616c96772180fef923"
 name = "aqua-candle"
 version = "0.1.0"
 dependencies = [
+ "aqua-exsia",
  "aqua-protocol",
  "aqua-runtime",
  "candle-core",

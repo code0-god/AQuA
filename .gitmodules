@@ -1,3 +1,4 @@
 [submodule "third_party/candle"]
 	path = third_party/candle
-	url = https://github.com/huggingface/candle
+	url = https://github.com/code0-god/candle-AQuA.git
+	branch = aqua/integration

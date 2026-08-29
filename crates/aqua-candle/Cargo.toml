@@ -5,9 +5,10 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+aqua-exsia = { path = "../aqua-exsia" }
 aqua-protocol = { path = "../aqua-protocol" }
 aqua-runtime = { path = "../aqua-runtime" }
-candle-core = { path = "../../third_party/candle/candle-core" }
+candle-core = { path = "../../third_party/candle/candle-core", features = ["aqua"] }
 
 [lib]
 path = "src/lib.rs"
