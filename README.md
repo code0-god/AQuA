@@ -4,8 +4,8 @@
 
 AQuA targets an end-to-end LLM accelerator that integrates hardware-native
 adaptive quantization into transformer execution. The current milestone is a
-CPU-shadow Candle integration that exercises the canonical Rust ExSIA
-reference through a real `Device::Aqua` matmul dispatch.
+CPU-shadow Candle integration plus deterministic Rust ExSIA and RaCo
+references for future BSV implementation.
 
 ## Implemented architecture
 
@@ -34,14 +34,31 @@ Device::Aqua / AquaStorage
                v
        ReferenceExsia (Rust)
                |
-        +------+------+
-        |             |
-        v             v
- dense I4/I8/I16   ResidualStripe events
-        |             |
-        |             `-- retained, not applied in this milestone
-        |                         |
-        |                         `-- RACO (planned)
+        +-----------------------------+
+        |                             |
+        v                             v
+ dense I4/I8/I16                ResidualStripe
+        |                       local row / K / i32
+        |                             |
+        |                             v
+        |                    Rust RaCo Reference
+        |                             |
+        |                  +----------+----------+
+        |                  |          |          |
+        |                  v          v          v
+        |             balanced    compact K  active lanes
+        |               radix
+        |                  \          |          /
+        |                   \         |         /
+        |                    v        v        v
+        |                       integer dot
+        |                            |
+        |                            v
+        |                    radix composition
+        |                            |
+        |                            v
+        |                 raw integer correction
+        |
         v
  dequantize_dense: q * 2^theta
         Q-only lossy reconstruction
@@ -62,6 +79,10 @@ The implemented crates have these responsibilities:
 * `aqua-exsia`: ExSIA-specific contracts, the canonical sequential reference,
   and public dense Q-only dequantization. `dequantize_dense` deliberately
   ignores residual events and is not residual-aware reconstruction.
+* `aqua-raco`: deterministic signed-21-bit balanced-radix decomposition,
+  canonical 32-wide block/K and active-lane compaction, dense integer
+  weight-code execution, radix composition, and raw integer correction.
+  Public read-only stage contracts are suitable for BSV golden comparison.
 * `aqua-candle`: framework adapter, integration-only `FixedStripePlanner`,
   `DenseQOnlyAquaExecutor`, and the `Device::Aqua` factory.
 * `third_party/candle`: the AQuA Candle fork. Its feature-gated Aqua backend
@@ -93,15 +114,17 @@ configuration.
 
 The canonical ExSIA input is a validated contiguous F32 `HostTensor` paired
 with an externally supplied `ActivationExecutionPlan`. Stripe boundaries are
-execution context, while block size and target precision are ExSIA algorithm
-configuration. Changing stripe grouping can change stripe exponents and thus
-execution semantics.
+execution context, target precision is ExSIA configuration, and
+`AQUA_BLOCK_SIZE = 32` is the shared immutable K-coordinate contract for
+ExSIA, RaCo, and future integer-weight scale groups. Changing stripe grouping
+can change stripe exponents and thus execution semantics.
 
 ExSIA emits clipped quantized values, per-stripe theta values, and
 stripe-scoped residual events. Residual coordinates use stripe-local row and
 original logical K. The current Candle bridge consumes only clipped values and
-theta. Residual events remain available for future residual compensation but
-are not added to the dense activation or matmul result.
+theta. The Rust RaCo reference consumes residuals separately and computes raw
+`residual integer × integer weight code` corrections without applying
+activation theta or weight scales.
 
 The Rust reference is the semantic contract for a future BSV implementation.
 AQuA deliberately flushes subnormal activation values to zero to make the
@@ -116,15 +139,18 @@ residency or acceleration. Specifically:
 * Quantized Candle weights remain in existing CPU/CUDA/Metal `QStorage`; there
   is no `QStorage::Aqua`.
 * Dense Q-only reconstruction is lossy and performs no residual addition.
-* There is no RACO crate, packetization, executor, or correction path.
+* RaCo balanced radix, logical stripe work, integer weight-code execution,
+  radix composition, and direct exact-parity tests are implemented.
+* There is no full Candle RaCo executor, ExSIF scale integration, physical
+  packet format, or accelerator-resident RaCo storage.
 * There is no BSV ExSIA datapath, transport, hardware tiler, asynchronous
   execution, systolic-array connection, or nonlinear-operation integration.
 * Intermediate tensors are not accelerator-resident.
 * There is no ExSIF, KV-cache offload, UART, PCIe, DMA, or FPGA board support.
 
-RACO is the reserved name for future residual compensation. Its absence here
-is deliberate; Q-only dequantization must not be described as canonical
-residual-aware reconstruction.
+RaCo remains separate from Q-only dequantization. The Rust core stops at raw
+integer correction; floating scale integration and Candle result addition are
+future layers.
 
 ## Candle fork
 
@@ -161,10 +187,9 @@ cargo run -p aqua-host
 
 ## Roadmap
 
-1. Add residual-aware reconstruction and RACO semantics separately from the
-   existing dense Q-only path.
+1. Integrate RaCo correction scaling with future ExSIF weight scales.
 2. Generate golden vectors from real Candle LLM activations.
-3. Implement and bit-exactly validate the BSV ExSIA datapath.
-4. Connect ExSIA and future residual compensation to accelerator execution.
+3. Implement and bit-exactly validate the BSV ExSIA and RaCo datapaths.
+4. Connect ExSIA and RaCo correction to accelerator execution.
 5. Add explicit hardware tiling, transport, and asynchronous execution.
 6. Add nonlinear transformer operations and accelerator-resident tensors.
