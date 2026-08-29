@@ -11,11 +11,8 @@ fn block(wide: Vec<i32>, exponent: i16, outlier_mask: u32) -> BlockResult {
     }
 }
 
-const fn config(precision: ExsiaPrecision, block_size: usize) -> ExsiaConfig {
-    ExsiaConfig {
-        precision,
-        block_size,
-    }
+const fn config(precision: ExsiaPrecision) -> ExsiaConfig {
+    ExsiaConfig::new(precision)
 }
 
 const fn stripe(stripe_index: usize, row_start: usize, row_end: usize) -> StripePlan {

@@ -5,6 +5,7 @@ members = [
     "crates/aqua-runtime",
     "crates/aqua-candle",
     "crates/aqua-exsia",
+    "crates/aqua-raco",
     "apps/aqua-host",
 ]
 exclude = ["third_party/candle"]

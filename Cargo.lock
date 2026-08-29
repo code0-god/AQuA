@@ -45,6 +45,7 @@ dependencies = [
 name = "aqua-exsia"
 version = "0.1.0"
 dependencies = [
+ "aqua-protocol",
  "aqua-runtime",
 ]
 
@@ -59,6 +60,15 @@ dependencies = [
 [[package]]
 name = "aqua-protocol"
 version = "0.1.0"
+
+[[package]]
+name = "aqua-raco"
+version = "0.1.0"
+dependencies = [
+ "aqua-exsia",
+ "aqua-protocol",
+ "aqua-runtime",
+]
 
 [[package]]
 name = "aqua-runtime"

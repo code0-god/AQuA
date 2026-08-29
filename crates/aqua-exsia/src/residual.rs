@@ -1,3 +1,5 @@
+use aqua_protocol::AQUA_BLOCK_SIZE;
+
 /// Sparse residual generated during ExSIA stripe folding.
 ///
 /// `local_row` is relative to the stripe's `row_start`.
@@ -37,20 +39,18 @@ impl ResidualEvent {
         stripe_row_start + self.local_row
     }
 
-    pub const fn block_index_in_row(&self, block_size: usize) -> usize {
-        debug_assert!(block_size > 0);
-        self.k / block_size
+    pub const fn block_index_in_row(&self) -> usize {
+        self.k / AQUA_BLOCK_SIZE
     }
 
-    pub const fn element_index_in_block(&self, block_size: usize) -> usize {
-        debug_assert!(block_size > 0);
-        self.k % block_size
+    pub const fn element_index_in_block(&self) -> usize {
+        self.k % AQUA_BLOCK_SIZE
     }
 }
 
 /// Stripe-scoped residual events emitted by ExSIA.
 ///
-/// This is the canonical software input contract for the future RACO path.
+/// This is the canonical software input contract for the future RaCo path.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ResidualStripe {
     stripe_index: usize,
@@ -147,8 +147,8 @@ mod tests {
         let event = ResidualEvent::new(0, 67, 11);
 
         // When
-        let block = event.block_index_in_row(32);
-        let element = event.element_index_in_block(32);
+        let block = event.block_index_in_row();
+        let element = event.element_index_in_block();
 
         // Then
         assert_eq!(block, 2);

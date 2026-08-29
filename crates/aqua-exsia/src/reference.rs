@@ -30,7 +30,8 @@ impl ReferenceExsia {
         let rows = matrix.rows();
         let logical_k = matrix.k();
         let config = input.config();
-        let blocks_per_row = logical_k.div_ceil(config.block_size);
+        let block_size = config.block_size();
+        let blocks_per_row = logical_k.div_ceil(block_size);
         let values = input.values();
 
         let mut quantized = QuantizedValues::with_capacity(config.precision, input.len());
@@ -46,8 +47,8 @@ impl ReferenceExsia {
                     let row_base = row * logical_k;
 
                     for block_in_row in 0..blocks_per_row {
-                        let k_start = block_in_row * config.block_size;
-                        let k_end = k_start.saturating_add(config.block_size).min(logical_k);
+                        let k_start = block_in_row * block_size;
+                        let k_end = k_start.saturating_add(block_size).min(logical_k);
                         let start = row_base + k_start;
                         let end = row_base + k_end;
 

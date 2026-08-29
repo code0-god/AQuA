@@ -5,14 +5,16 @@ use super::{
 #[test]
 fn folds_single_exponent_without_promotion() {
     // Given
-    let blocks = [block(vec![20], 1, 0), block(vec![30], 1, 0)];
-    let config = config(ExsiaPrecision::I8, 1);
+    let blocks = [block(vec![20; 32], 1, 0), block(vec![30], 1, 0)];
+    let config = config(ExsiaPrecision::I8);
 
     // When
-    let result = fold_stripe(&blocks, &config, stripe(0, 0, 1), 2).expect("valid stripe");
+    let result = fold_stripe(&blocks, &config, stripe(0, 0, 1), 33).expect("valid stripe");
 
     // Then
-    assert_eq!(result.quantized, QuantizedValues::I8(vec![20, 30]));
+    let mut expected = vec![20; 32];
+    expected.push(30);
+    assert_eq!(result.quantized, QuantizedValues::I8(expected));
     assert_eq!(result.exponent, 1);
     assert_eq!(result.theta, 1 - config.rho());
     assert!(result.residual_stripe.is_empty());
@@ -21,14 +23,16 @@ fn folds_single_exponent_without_promotion() {
 #[test]
 fn uses_second_distinct_exponent_for_stripe_scale() {
     // Given
-    let blocks = [block(vec![10], 3, 0), block(vec![10], 1, 0)];
-    let config = config(ExsiaPrecision::I8, 1);
+    let blocks = [block(vec![10; 32], 3, 0), block(vec![10], 1, 0)];
+    let config = config(ExsiaPrecision::I8);
 
     // When
-    let result = fold_stripe(&blocks, &config, stripe(0, 0, 1), 2).expect("valid stripe");
+    let result = fold_stripe(&blocks, &config, stripe(0, 0, 1), 33).expect("valid stripe");
 
     // Then
-    assert_eq!(result.quantized, QuantizedValues::I8(vec![40, 10]));
+    let mut expected = vec![40; 32];
+    expected.push(10);
+    assert_eq!(result.quantized, QuantizedValues::I8(expected));
     assert_eq!(result.exponent, 1);
     assert_eq!(result.theta, -5);
     assert!(result.residual_stripe.is_empty());
@@ -37,14 +41,19 @@ fn uses_second_distinct_exponent_for_stripe_scale() {
 #[test]
 fn promotes_top_exponent_block_for_residual_capture() {
     // Given
-    let blocks = [block(vec![100], 3, 0), block(vec![10], 1, 0)];
-    let config = config(ExsiaPrecision::I8, 1);
+    let mut promoted = vec![0; 32];
+    promoted[0] = 100;
+    let blocks = [block(promoted, 3, 0), block(vec![10], 1, 0)];
+    let config = config(ExsiaPrecision::I8);
 
     // When
-    let result = fold_stripe(&blocks, &config, stripe(0, 0, 1), 2).expect("valid stripe");
+    let result = fold_stripe(&blocks, &config, stripe(0, 0, 1), 33).expect("valid stripe");
 
     // Then
-    assert_eq!(result.quantized, QuantizedValues::I8(vec![127, 10]));
+    let mut expected = vec![0; 33];
+    expected[0] = 127;
+    expected[32] = 10;
+    assert_eq!(result.quantized, QuantizedValues::I8(expected));
     assert_eq!(result.exponent, 1);
     assert_eq!(
         result.residual_stripe.events(),
@@ -56,7 +65,7 @@ fn promotes_top_exponent_block_for_residual_capture() {
 fn captures_existing_block_outlier_residual() {
     // Given
     let blocks = [block(vec![200], 1, 1_u32)];
-    let config = config(ExsiaPrecision::I8, 1);
+    let config = config(ExsiaPrecision::I8);
 
     // When
     let result = fold_stripe(&blocks, &config, stripe(0, 0, 1), 1).expect("valid stripe");
@@ -73,7 +82,7 @@ fn captures_existing_block_outlier_residual() {
 fn omits_selected_outlier_without_clipping_residual() {
     // Given
     let blocks = [block(vec![10], 1, 1_u32)];
-    let config = config(ExsiaPrecision::I8, 1);
+    let config = config(ExsiaPrecision::I8);
 
     // When
     let result = fold_stripe(&blocks, &config, stripe(0, 0, 1), 1).expect("valid stripe");
@@ -87,16 +96,16 @@ fn omits_selected_outlier_without_clipping_residual() {
 fn folds_all_invalid_zero_blocks_at_zero_exponent() {
     // Given
     let blocks = [
-        block(vec![0, 0], math::NEG_INF_EXP, 0),
+        block(vec![0; 32], math::NEG_INF_EXP, 0),
         block(vec![0], math::NEG_INF_EXP, 0),
     ];
-    let config = config(ExsiaPrecision::I8, 2);
+    let config = config(ExsiaPrecision::I8);
 
     // When
-    let result = fold_stripe(&blocks, &config, stripe(0, 0, 1), 3).expect("valid stripe");
+    let result = fold_stripe(&blocks, &config, stripe(0, 0, 1), 33).expect("valid stripe");
 
     // Then
-    assert_eq!(result.quantized, QuantizedValues::I8(vec![0, 0, 0]));
+    assert_eq!(result.quantized, QuantizedValues::I8(vec![0; 33]));
     assert_eq!(result.exponent, 0);
     assert_eq!(result.theta, -config.rho());
     assert!(result.residual_stripe.is_empty());
@@ -105,14 +114,19 @@ fn folds_all_invalid_zero_blocks_at_zero_exponent() {
 #[test]
 fn clips_i4_after_scale_alignment() {
     // Given
-    let blocks = [block(vec![6], 1, 0), block(vec![2], 0, 0)];
-    let config = config(ExsiaPrecision::I4, 1);
+    let mut promoted = vec![0; 32];
+    promoted[0] = 6;
+    let blocks = [block(promoted, 1, 0), block(vec![2], 0, 0)];
+    let config = config(ExsiaPrecision::I4);
 
     // When
-    let result = fold_stripe(&blocks, &config, stripe(0, 0, 1), 2).expect("valid stripe");
+    let result = fold_stripe(&blocks, &config, stripe(0, 0, 1), 33).expect("valid stripe");
 
     // Then
-    assert_eq!(result.quantized, QuantizedValues::I4(vec![7, 2]));
+    let mut expected = vec![0; 33];
+    expected[0] = 7;
+    expected[32] = 2;
+    assert_eq!(result.quantized, QuantizedValues::I4(expected));
     assert_eq!(result.exponent, 0);
     assert_eq!(
         result.residual_stripe.events(),
@@ -124,7 +138,7 @@ fn clips_i4_after_scale_alignment() {
 fn produces_i8_quantized_values() {
     // Given
     let blocks = [block(vec![-128, 0, 127], 0, 0)];
-    let config = config(ExsiaPrecision::I8, 3);
+    let config = config(ExsiaPrecision::I8);
 
     // When
     let result = fold_stripe(&blocks, &config, stripe(0, 0, 1), 3).expect("valid stripe");
@@ -137,7 +151,7 @@ fn produces_i8_quantized_values() {
 fn produces_i16_quantized_values_without_clipping() {
     // Given
     let blocks = [block(vec![-32_000, 0, 30_000], 0, 0)];
-    let config = config(ExsiaPrecision::I16, 3);
+    let config = config(ExsiaPrecision::I16);
 
     // When
     let result = fold_stripe(&blocks, &config, stripe(0, 0, 1), 3).expect("valid stripe");
@@ -154,15 +168,18 @@ fn produces_i16_quantized_values_without_clipping() {
 fn preserves_logical_element_order() {
     // Given
     let blocks = [
-        block(vec![1, 2], 0, 0),
-        block(vec![3, 4], 0, 0),
-        block(vec![5], 0, 0),
+        block(vec![1; 32], 0, 0),
+        block(vec![2; 32], 0, 0),
+        block(vec![3], 0, 0),
     ];
-    let config = config(ExsiaPrecision::I8, 2);
+    let config = config(ExsiaPrecision::I8);
 
     // When
-    let result = fold_stripe(&blocks, &config, stripe(0, 0, 1), 5).expect("valid stripe");
+    let result = fold_stripe(&blocks, &config, stripe(0, 0, 1), 65).expect("valid stripe");
 
     // Then
-    assert_eq!(result.quantized, QuantizedValues::I8(vec![1, 2, 3, 4, 5]));
+    let mut expected = vec![1; 32];
+    expected.extend(vec![2; 32]);
+    expected.push(3);
+    assert_eq!(result.quantized, QuantizedValues::I8(expected));
 }

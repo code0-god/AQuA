@@ -5,10 +5,6 @@ use std::{error::Error, fmt};
 pub enum ExsiaError {
     InvalidInput(RuntimeError),
     InvalidExecutionPlan(ExecutionPlanError),
-    InvalidBlockSize {
-        block_size: usize,
-        maximum: usize,
-    },
     InvalidBlockLength {
         len: usize,
         block_size: usize,
@@ -49,13 +45,6 @@ impl fmt::Display for ExsiaError {
             Self::InvalidExecutionPlan(error) => {
                 write!(formatter, "invalid ExSIA execution plan: {error}")
             }
-            Self::InvalidBlockSize {
-                block_size,
-                maximum,
-            } => write!(
-                formatter,
-                "invalid ExSIA block size {block_size}; expected 1..={maximum}"
-            ),
             Self::InvalidBlockLength { len, block_size } => {
                 write!(
                     formatter,
@@ -105,8 +94,7 @@ impl Error for ExsiaError {
         match self {
             Self::InvalidInput(error) => Some(error),
             Self::InvalidExecutionPlan(error) => Some(error),
-            Self::InvalidBlockSize { .. }
-            | Self::InvalidBlockLength { .. }
+            Self::InvalidBlockLength { .. }
             | Self::InvalidOutputElementCount { .. }
             | Self::InvalidStripeThetaCount { .. }
             | Self::InvalidStripeBlockCount { .. }

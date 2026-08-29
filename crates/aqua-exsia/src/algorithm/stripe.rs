@@ -17,7 +17,7 @@ pub(crate) struct StripeResult {
 /// Folds row-major ExSIA blocks into one planned stripe.
 ///
 /// `blocks` must be ordered by local row, then K block. Every full K block
-/// has `config.block_size` values; each row's final block contains only its
+/// has `config.block_size()` values; each row's final block contains only its
 /// remaining logical K values.
 ///
 /// # Errors
@@ -29,12 +29,11 @@ pub(crate) fn fold_stripe(
     stripe: StripePlan,
     logical_k: usize,
 ) -> Result<StripeResult, ExsiaError> {
-    debug_assert!(config.block_size > 0);
-    debug_assert!(config.block_size <= u32::BITS as usize);
     debug_assert!(logical_k > 0);
 
+    let block_size = config.block_size();
     let row_count = stripe.row_count();
-    let blocks_per_row = logical_k.div_ceil(config.block_size);
+    let blocks_per_row = logical_k.div_ceil(block_size);
     let expected_block_count = row_count
         .checked_mul(blocks_per_row)
         .ok_or(ExecutionPlanError::ElementCountOverflow)?;
@@ -50,9 +49,9 @@ pub(crate) fn fold_stripe(
     for (local_block_index, block) in blocks.iter().enumerate() {
         let block_in_row = local_block_index % blocks_per_row;
         let k_start = block_in_row
-            .checked_mul(config.block_size)
+            .checked_mul(block_size)
             .ok_or(ExecutionPlanError::ElementCountOverflow)?;
-        let expected_width = (logical_k - k_start).min(config.block_size);
+        let expected_width = (logical_k - k_start).min(block_size);
 
         if block.wide.len() != expected_width {
             return Err(ExsiaError::InvalidStripeBlockWidth {
@@ -117,7 +116,7 @@ pub(crate) fn fold_stripe(
         let local_row = local_block_index / blocks_per_row;
         let block_in_row = local_block_index % blocks_per_row;
         let k_start = block_in_row
-            .checked_mul(config.block_size)
+            .checked_mul(block_size)
             .ok_or(ExecutionPlanError::ElementCountOverflow)?;
         let delta = if block.exponent == math::NEG_INF_EXP {
             0
