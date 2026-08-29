@@ -1,6 +1,7 @@
 use super::math::{self, SigmaStats};
 
-use crate::{ExsiaConfig, ExsiaError, EXSIA_BLOCK_SIZE};
+use crate::{ExsiaConfig, ExsiaError};
+use aqua_protocol::AQUA_BLOCK_SIZE;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct BlockResult {
@@ -10,13 +11,13 @@ pub(crate) struct BlockResult {
 }
 
 pub(crate) fn mask_set(mask: &mut u32, index: usize) {
-    debug_assert!(index < EXSIA_BLOCK_SIZE);
+    debug_assert!(index < AQUA_BLOCK_SIZE);
 
     *mask |= 1_u32 << index; // index 위치의 bit를 1로 설정.
 }
 
 pub(crate) fn mask_contains(mask: u32, index: usize) -> bool {
-    debug_assert!(index < EXSIA_BLOCK_SIZE);
+    debug_assert!(index < AQUA_BLOCK_SIZE);
 
     mask & (1_u32 << index) != 0 // index 위치의 bit가 설정되어 있는지 확인.
 }
@@ -25,14 +26,10 @@ pub(crate) fn quantize_block(
     values: &[f32],
     config: &ExsiaConfig,
 ) -> Result<BlockResult, ExsiaError> {
-    if values.is_empty()
-        || config.block_size == 0
-        || config.block_size > EXSIA_BLOCK_SIZE
-        || values.len() > config.block_size
-    {
+    if values.is_empty() || values.len() > AQUA_BLOCK_SIZE {
         return Err(ExsiaError::InvalidBlockLength {
             len: values.len(),
-            block_size: config.block_size,
+            block_size: AQUA_BLOCK_SIZE,
         });
     }
 
@@ -55,7 +52,7 @@ pub(crate) fn quantize_block(
 
     // 이후 integer outlier 제거 후 final exponent를 찾을 때
     // 다시 FP exponent를 계산하지 않도록 저장.
-    let mut exponents = [math::NEG_INF_EXP; EXSIA_BLOCK_SIZE];
+    let mut exponents = [math::NEG_INF_EXP; AQUA_BLOCK_SIZE];
 
     for (i, &value) in values.iter().enumerate() {
         let exp = math::unbiased_exp(value);
@@ -208,11 +205,12 @@ pub(crate) fn quantize_block(
 mod tests {
     use super::{mask_contains, quantize_block};
 
-    use crate::{ExsiaConfig, ExsiaError, ExsiaPrecision, EXSIA_BLOCK_SIZE};
+    use crate::{ExsiaConfig, ExsiaError, ExsiaPrecision};
+    use aqua_protocol::AQUA_BLOCK_SIZE;
 
     #[test]
     fn selects_top_exponent_bucket_as_preliminary_outlier() {
-        let mut values = vec![1.0; EXSIA_BLOCK_SIZE];
+        let mut values = vec![1.0; AQUA_BLOCK_SIZE];
 
         values[0] = 8.0; // exponent 3. 나머지는 exponent 0.
 
@@ -308,14 +306,14 @@ mod tests {
             quantize_block(&[], &config),
             Err(ExsiaError::InvalidBlockLength {
                 len: 0,
-                block_size: EXSIA_BLOCK_SIZE,
+                block_size: AQUA_BLOCK_SIZE,
             })
         ));
     }
 
     #[test]
     fn rejects_block_larger_than_configured_size() {
-        let values = vec![1.0; EXSIA_BLOCK_SIZE + 1];
+        let values = vec![1.0; AQUA_BLOCK_SIZE + 1];
 
         let config = ExsiaConfig::new(ExsiaPrecision::I8);
 
@@ -323,8 +321,8 @@ mod tests {
             quantize_block(&values, &config),
             Err(ExsiaError::InvalidBlockLength {
                 len,
-                block_size: EXSIA_BLOCK_SIZE,
-            }) if len == EXSIA_BLOCK_SIZE + 1
+                block_size: AQUA_BLOCK_SIZE,
+            }) if len == AQUA_BLOCK_SIZE + 1
         ));
     }
 }

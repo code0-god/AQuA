@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+aqua-protocol = { path = "../aqua-protocol" }
 aqua-runtime = { path = "../aqua-runtime" }
 
 [lib]

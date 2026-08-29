@@ -3,6 +3,12 @@
 
 use std::{error::Error, fmt}; // std::error::Error와 std::fmt를 현재 scope로 가져옴.
 
+/// Canonical AQuA K-domain block size.
+///
+/// ExSIA activation quantization, RaCo residual grouping, and future
+/// integer-weight scale groups use the same 32-element coordinate system.
+pub const AQUA_BLOCK_SIZE: usize = 32;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)] // Clone, 자동 복사(Copy), Debug 출력, ==/!= 비교 지원.
 pub enum AquaDType {
     // enum: 여러 variant 중 하나의 값을 가지는 타입.
@@ -99,7 +105,12 @@ impl Error for TensorDescError {} // 표준 Error trait 구현. 추가 구현이
 
 #[cfg(test)]
 mod tests {
-    use super::{AquaDType, TensorDesc, TensorDescError};
+    use super::{AquaDType, TensorDesc, TensorDescError, AQUA_BLOCK_SIZE};
+
+    #[test]
+    fn uses_canonical_k_block_size() {
+        assert_eq!(AQUA_BLOCK_SIZE, 32);
+    }
 
     #[test]
     fn validates_descriptor_element_count() {

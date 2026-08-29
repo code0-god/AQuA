@@ -1,5 +1,4 @@
-/// Canonical ExSIA activation block size used by AQuA.
-pub const EXSIA_BLOCK_SIZE: usize = 32;
+use aqua_protocol::AQUA_BLOCK_SIZE;
 
 /// Canonical ExSIA sigma threshold used by AQuA.
 pub const EXSIA_SIGMA: i32 = 2;
@@ -52,15 +51,15 @@ impl ExsiaPrecision {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ExsiaConfig {
     pub precision: ExsiaPrecision,
-    pub block_size: usize,
 }
 
 impl ExsiaConfig {
     pub const fn new(precision: ExsiaPrecision) -> Self {
-        Self {
-            precision,
-            block_size: EXSIA_BLOCK_SIZE,
-        }
+        Self { precision }
+    }
+
+    pub const fn block_size(self) -> usize {
+        AQUA_BLOCK_SIZE
     }
 
     pub const fn rho(self) -> i16 {
@@ -82,14 +81,14 @@ impl ExsiaConfig {
 
 #[cfg(test)]
 mod tests {
-    use super::{ExsiaConfig, ExsiaPrecision, EXSIA_BLOCK_SIZE, EXSIA_SIGMA};
+    use super::{ExsiaConfig, ExsiaPrecision, EXSIA_SIGMA};
+    use aqua_protocol::AQUA_BLOCK_SIZE;
 
     #[test]
     fn uses_canonical_block_size() {
         let config = ExsiaConfig::new(ExsiaPrecision::I8);
 
-        assert_eq!(config.block_size, EXSIA_BLOCK_SIZE);
-        assert_eq!(config.block_size, 32);
+        assert_eq!(config.block_size(), AQUA_BLOCK_SIZE);
     }
 
     #[test]
