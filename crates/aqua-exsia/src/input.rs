@@ -1,4 +1,4 @@
-use crate::{ExsiaConfig, ExsiaError};
+use crate::{ExsiaConfig, ExsiaError, EXSIA_BLOCK_SIZE};
 use aqua_runtime::HostTensor;
 
 /// validated input to ExSIA.
@@ -22,6 +22,13 @@ impl<'a> ExsiaInput<'a> {
         // Self = ExsiaInput<'a>.
 
         tensor.validate()?; // validation 실패 시 ExsiaError로 변환되어 즉시 반환.
+
+        if config.block_size == 0 || config.block_size > EXSIA_BLOCK_SIZE {
+            return Err(ExsiaError::InvalidBlockSize {
+                block_size: config.block_size,
+                maximum: EXSIA_BLOCK_SIZE,
+            });
+        }
 
         Ok(Self { tensor, config }) // reference와 config를 wrapper에 저장.
     }
@@ -48,5 +55,47 @@ impl<'a> ExsiaInput<'a> {
 
     pub fn is_empty(&self) -> bool {
         self.values().is_empty()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ExsiaInput;
+    use crate::{ExsiaConfig, ExsiaError, ExsiaPrecision, EXSIA_BLOCK_SIZE};
+    use aqua_runtime::HostTensor;
+
+    const fn config(block_size: usize) -> ExsiaConfig {
+        ExsiaConfig {
+            precision: ExsiaPrecision::I8,
+            block_size,
+        }
+    }
+
+    #[test]
+    fn rejects_zero_block_size() {
+        let tensor = HostTensor::f32(vec![1], vec![1.0]).expect("valid host tensor");
+        let result = ExsiaInput::new(&tensor, config(0));
+
+        assert!(matches!(
+            result,
+            Err(ExsiaError::InvalidBlockSize {
+                block_size: 0,
+                maximum: EXSIA_BLOCK_SIZE,
+            })
+        ));
+    }
+
+    #[test]
+    fn rejects_block_size_above_canonical_maximum() {
+        let tensor = HostTensor::f32(vec![1], vec![1.0]).expect("valid host tensor");
+        let result = ExsiaInput::new(&tensor, config(EXSIA_BLOCK_SIZE + 1));
+
+        assert!(matches!(
+            result,
+            Err(ExsiaError::InvalidBlockSize {
+                block_size,
+                maximum: EXSIA_BLOCK_SIZE,
+            }) if block_size == EXSIA_BLOCK_SIZE + 1
+        ));
     }
 }

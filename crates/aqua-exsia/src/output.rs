@@ -1,4 +1,4 @@
-use crate::{ExsiaPrecision, Residuals}; // 현재 crate root에서 두 타입을 가져옴.
+use crate::{ExsiaPrecision, ResidualStripe};
 
 /// Logical quantized activation values produced by ExSIA.
 ///
@@ -88,9 +88,14 @@ impl QuantizedValues {
 /// Final software-visible ExSIA result.
 ///
 /// The dense activation values are represented at the selected target
-/// precision. Stripe theta values and sparse residuals are retained
+/// precision. Stripe theta values and stripe-scoped residuals are retained
 /// separately because they are required to reconstruct the wide integer
 /// representation.
+///
+/// Invariants:
+/// - `stripe_theta.len() == residual_stripes.len()`
+/// - `residual_stripes[i].stripe_index() == i`
+/// - `quantized.len()` equals the original logical element count
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ExsiaOutput {
     pub quantized: QuantizedValues, // 최종 dense quantized activation.
@@ -98,8 +103,8 @@ pub struct ExsiaOutput {
     /// Quantization exponent θ_s for each stripe.
     pub stripe_theta: Vec<i16>, // stripe마다 하나의 quantization exponent.
 
-    /// Sparse residuals generated during stripe folding.
-    pub residuals: Residuals, // stripe folding에서 분리된 residual.
+    /// Stripe-scoped residual events consumed by the future RACO path.
+    pub residual_stripes: Vec<ResidualStripe>,
 
     /// Original logical activation shape.
     pub shape: Vec<usize>, // 원본 tensor의 logical shape.
@@ -121,9 +126,9 @@ impl ExsiaOutput {
 
 #[cfg(test)]
 mod tests {
-    use super::QuantizedValues;
+    use super::{ExsiaOutput, QuantizedValues};
 
-    use crate::ExsiaPrecision;
+    use crate::{ExsiaPrecision, ResidualStripe};
 
     #[test]
     fn stores_i4_as_logical_i8_values() {
@@ -169,5 +174,32 @@ mod tests {
         assert_eq!(lhs, QuantizedValues::I8(vec![1, 2, 3, 4]));
 
         assert!(rhs.is_empty());
+    }
+
+    #[test]
+    fn output_tracks_quantized_and_stripe_contracts() {
+        // Given
+        let output = ExsiaOutput {
+            quantized: QuantizedValues::I8(vec![0; 66]),
+            stripe_theta: vec![-6, -5],
+            residual_stripes: vec![
+                ResidualStripe::with_capacity(0, 0, 1, 33, 0),
+                ResidualStripe::with_capacity(1, 1, 1, 33, 0),
+            ],
+            shape: vec![2, 33],
+        };
+
+        // When
+        let contract = (
+            output.precision(),
+            output.len(),
+            output.stripe_theta.len(),
+            output.residual_stripes.len(),
+            output.shape.as_slice(),
+        );
+
+        // Then
+        assert_eq!(contract, (ExsiaPrecision::I8, 66, 2, 2, [2, 33].as_slice()));
+        assert!(!output.is_empty());
     }
 }

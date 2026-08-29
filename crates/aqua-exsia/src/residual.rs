@@ -1,138 +1,244 @@
-/// Sparse residual for an outlier selected by ExSIA.
+/// Sparse residual generated during ExSIA stripe folding.
 ///
-/// `block_index` identifies the ExSIA block containing the outlier.
-/// `element_index` identifies the element within that block.
-/// `residual` stores the signed integer residual associated with that element.
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)] // 복사 가능, {:?} 출력 가능, == / != 비교 가능.
-pub struct ResidualEntry {
-    block_index: usize,   // outlier가 속한 block 번호.
-    element_index: usize, // block 내부의 element 번호.
-    residual: i32,        // signed integer residual 값.
+/// `local_row` is relative to the stripe's `row_start`.
+/// `k` is the original logical activation coordinate in the reduction
+/// dimension.
+/// `residual` is the signed integer value separated by target-precision
+/// clipping at the final stripe scale.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ResidualEvent {
+    local_row: usize,
+    k: usize,
+    residual: i32,
 }
 
-impl ResidualEntry {
-    pub const fn new(block_index: usize, element_index: usize, residual: i32) -> Self {
-        // Self = ResidualEntry.
+impl ResidualEvent {
+    pub(crate) const fn new(local_row: usize, k: usize, residual: i32) -> Self {
         Self {
-            block_index, // `block_index: block_index`의 축약형.
-            element_index,
+            local_row,
+            k,
             residual,
         }
     }
 
-    pub const fn block_index(&self) -> usize {
-        self.block_index // usize는 Copy이므로 값을 복사해서 반환.
+    pub const fn local_row(&self) -> usize {
+        self.local_row
     }
 
-    pub const fn element_index(&self) -> usize {
-        self.element_index
+    pub const fn k(&self) -> usize {
+        self.k
     }
 
     pub const fn residual(&self) -> i32 {
-        self.residual // i32 역시 Copy.
+        self.residual
+    }
+
+    pub const fn global_row(&self, stripe_row_start: usize) -> usize {
+        stripe_row_start + self.local_row
+    }
+
+    pub const fn block_index_in_row(&self, block_size: usize) -> usize {
+        debug_assert!(block_size > 0);
+        self.k / block_size
+    }
+
+    pub const fn element_index_in_block(&self, block_size: usize) -> usize {
+        debug_assert!(block_size > 0);
+        self.k % block_size
     }
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct Residuals {
-    entries: Vec<ResidualEntry>, // 여러 residual entry를 동적 배열에 저장.
+/// Stripe-scoped residual events emitted by ExSIA.
+///
+/// This is the canonical software input contract for the future RACO path.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ResidualStripe {
+    stripe_index: usize,
+    row_start: usize,
+    row_count: usize,
+    logical_k: usize,
+    events: Vec<ResidualEvent>,
 }
 
-impl Residuals {
-    pub const fn new() -> Self {
+impl ResidualStripe {
+    pub(crate) fn with_capacity(
+        stripe_index: usize,
+        row_start: usize,
+        row_count: usize,
+        logical_k: usize,
+        capacity: usize,
+    ) -> Self {
         Self {
-            entries: Vec::new(), // 빈 Vec 생성. len=0, capacity=0.
+            stripe_index,
+            row_start,
+            row_count,
+            logical_k,
+            events: Vec::with_capacity(capacity),
         }
     }
 
-    pub fn with_capacity(capacity: usize) -> Self {
-        Self {
-            entries: Vec::with_capacity(capacity), // 미리 capacity만큼 메모리 공간 확보.
-        }
+    pub const fn stripe_index(&self) -> usize {
+        self.stripe_index
     }
 
-    pub fn push(&mut self, entry: ResidualEntry) {
-        self.entries.push(entry); // Vec 끝에 entry 추가.
+    pub const fn row_start(&self) -> usize {
+        self.row_start
     }
 
-    pub(crate) fn append(&mut self, other: &mut Self) {
-        self.entries.append(&mut other.entries);
+    pub const fn row_count(&self) -> usize {
+        self.row_count
+    }
+
+    pub const fn row_end(&self) -> usize {
+        self.row_start + self.row_count
+    }
+
+    pub const fn logical_k(&self) -> usize {
+        self.logical_k
+    }
+
+    pub fn events(&self) -> &[ResidualEvent] {
+        &self.events
     }
 
     pub fn len(&self) -> usize {
-        self.entries.len() // 현재 저장된 entry 개수.
+        self.events.len()
     }
 
     pub fn is_empty(&self) -> bool {
-        self.entries.is_empty() // entry가 0개면 true.
+        self.events.is_empty()
     }
 
-    pub fn entries(&self) -> &[ResidualEntry] {
-        &self.entries // Vec을 소유권 이동 없이 slice로 빌려줌.
+    pub fn iter(&self) -> impl Iterator<Item = &ResidualEvent> {
+        self.events.iter()
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = &ResidualEntry> {
-        self.entries.iter() // entry를 하나씩 &ResidualEntry로 순회.
+    pub fn into_events(self) -> Vec<ResidualEvent> {
+        self.events
     }
 
-    pub fn clear(&mut self) {
-        self.entries.clear(); // 모든 element 제거. Residuals는 계속 사용 가능.
-    }
-
-    pub fn into_entries(self) -> Vec<ResidualEntry> {
-        self.entries // self의 ownership을 받아 내부 Vec 자체를 반환.
+    pub(crate) fn push(&mut self, event: ResidualEvent) {
+        debug_assert!(event.local_row() < self.row_count);
+        debug_assert!(event.k() < self.logical_k);
+        debug_assert_ne!(event.residual(), 0);
+        self.events.push(event);
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{ResidualEntry, Residuals};
+    use super::{ResidualEvent, ResidualStripe};
 
     #[test]
-    fn entry_tracks_location_and_residual() {
-        let entry = ResidualEntry::new(3, 17, -42);
+    fn event_tracks_local_row_k_and_residual() {
+        // Given
+        let event = ResidualEvent::new(3, 67, -42);
 
-        assert_eq!(entry.block_index(), 3);
-        assert_eq!(entry.element_index(), 17);
-        assert_eq!(entry.residual(), -42);
+        // When
+        let coordinates = (event.local_row(), event.k(), event.residual());
+
+        // Then
+        assert_eq!(coordinates, (3, 67, -42));
     }
 
     #[test]
-    fn residuals_preserve_insertion_order() {
-        let mut residuals = Residuals::new();
+    fn event_derives_block_and_element_indices() {
+        // Given
+        let event = ResidualEvent::new(0, 67, 11);
 
-        residuals.push(ResidualEntry::new(0, 4, 11));
-        residuals.push(ResidualEntry::new(0, 21, -7));
-        residuals.push(ResidualEntry::new(2, 3, 29));
+        // When
+        let block = event.block_index_in_row(32);
+        let element = event.element_index_in_block(32);
 
-        assert_eq!(residuals.len(), 3);
+        // Then
+        assert_eq!(block, 2);
+        assert_eq!(element, 3);
+    }
 
-        assert_eq!(
-            residuals.entries(),
-            &[
-                ResidualEntry::new(0, 4, 11),
-                ResidualEntry::new(0, 21, -7),
-                ResidualEntry::new(2, 3, 29),
-            ]
+    #[test]
+    fn event_computes_global_row() {
+        // Given
+        let event = ResidualEvent::new(3, 0, 11);
+
+        // When
+        let global_row = event.global_row(8);
+
+        // Then
+        assert_eq!(global_row, 11);
+    }
+
+    #[test]
+    fn stripe_tracks_metadata() {
+        // Given
+        let stripe = ResidualStripe::with_capacity(3, 8, 2, 65, 0);
+
+        // When
+        let metadata = (
+            stripe.stripe_index(),
+            stripe.row_start(),
+            stripe.row_count(),
+            stripe.logical_k(),
         );
+
+        // Then
+        assert_eq!(metadata, (3, 8, 2, 65));
     }
 
     #[test]
-    fn empty_residuals_are_empty() {
-        let residuals = Residuals::new();
+    fn stripe_preserves_insertion_order() {
+        // Given
+        let mut stripe = ResidualStripe::with_capacity(0, 0, 2, 33, 4);
+        let expected = [
+            ResidualEvent::new(0, 1, 11),
+            ResidualEvent::new(0, 32, -7),
+            ResidualEvent::new(1, 2, 29),
+        ];
 
-        assert!(residuals.is_empty());
-        assert_eq!(residuals.len(), 0);
+        // When
+        for event in expected {
+            stripe.push(event);
+        }
+
+        // Then
+        assert_eq!(stripe.events(), &expected);
+        assert_eq!(stripe.iter().copied().collect::<Vec<_>>(), expected);
     }
 
     #[test]
-    fn clear_removes_all_entries() {
-        let mut residuals = Residuals::new();
+    fn empty_stripe_is_empty() {
+        // Given
+        let stripe = ResidualStripe::with_capacity(0, 0, 1, 32, 0);
 
-        residuals.push(ResidualEntry::new(1, 7, 15));
-        residuals.clear();
+        // When
+        let metadata = (stripe.is_empty(), stripe.len());
 
-        assert!(residuals.is_empty());
+        // Then
+        assert_eq!(metadata, (true, 0));
+    }
+
+    #[test]
+    fn stripe_row_end_is_derived_correctly() {
+        // Given
+        let stripe = ResidualStripe::with_capacity(3, 8, 2, 65, 0);
+
+        // When
+        let row_end = stripe.row_end();
+
+        // Then
+        assert_eq!(row_end, 10);
+    }
+
+    #[test]
+    fn into_events_transfers_ownership() {
+        // Given
+        let mut stripe = ResidualStripe::with_capacity(0, 0, 1, 32, 1);
+        let event = ResidualEvent::new(0, 7, 15);
+        stripe.push(event);
+
+        // When
+        let events = stripe.into_events();
+
+        // Then
+        assert_eq!(events, vec![event]);
     }
 }

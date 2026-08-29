@@ -8,21 +8,24 @@ adaptive quantization into transformer execution.
 Current milestone:
 
 ```text
-Candle Host
-     |
-     v
+Candle floating activation
+          |
+          v
 Canonical F32 HostTensor
-     |
-     +--------------------+
-     |                    |
-     v                    v
-Software ExSIA       BSV ExSIA
-Reference            Quantizer
-     |                    |
-     +---------+----------+
-               |
-               v
-        Bit-exact validation
+          |
+          v
+ActivationExecutionPlan
+          |
+          v
+Sequential Rust ExSIA Reference
+          |
+          +--------------------------+
+          |                          |
+          v                          v
+   I4 / I8 / I16            ResidualStripe events
+                                      |
+                                      v
+                               RACO (planned)
 ```
 
 First research target:
@@ -31,9 +34,9 @@ First research target:
 > implementation of ExSIA and validate its quantization output bit-exactly
 > against the canonical software ExSIA implementation.
 
-The AQuA host/runtime boundary and the software-side ExSIA domain are being
-established first. The canonical ExSIA quantization algorithm and BSV datapath
-are not implemented yet.
+The deterministic sequential AQuA ExSIA reference is implemented over an
+externally supplied stripe execution plan. RACO and the BSV datapath are not
+implemented yet.
 
 ## Architecture
 
@@ -58,8 +61,8 @@ Candle floating activation
 ```
 
 * `aqua-protocol`: Candle-independent tensor and common protocol semantics.
-* `aqua-runtime`: accelerator execution boundary, independent of Candle,
-  ExSIA semantics, and transport.
+* `aqua-runtime`: accelerator execution boundary and validated activation
+  stripe plans, independent of Candle, ExSIA math, and transport.
 * `aqua-candle`: converts supported CPU-resident Candle floating-point
   activations into canonical contiguous F32 AQuA host tensors.
 * `aqua-exsia`: owns ExSIA-specific software contracts and the canonical
@@ -77,14 +80,18 @@ aqua-candle
    |
    v
 HostTensor (F32)
+      +
+ActivationExecutionPlan
    |
-   +------------------------+
-   |                        |
-   v                        v
-aqua-exsia              aqua-runtime
-(reference)                 |
-                            v
-                       BSV backend
+   v
+aqua-exsia
+Sequential Reference
+   |
+   +--> quantized I4 / I8 / I16
+   `--> ResidualStripe events
+             |
+             v
+        RACO (planned)
 ```
 
 Protocol semantics are separate from transport. UART, PCIe, simulator APIs,
@@ -99,26 +106,45 @@ host boundary:
 
 ```text
 HostTensor F32
+      +
+ActivationExecutionPlan
       |
       v
-  ExSIA input
+ReferenceExsia
       |
       v
-Canonical software ExSIA
+block-local quantization
       |
       v
-Quantized activation result
+stripe-local folding
+      |
+      +--------------------------+
+      |                          |
+      v                          v
+Quantized activation       ResidualStripe
+I4 / I8 / I16              local_row / K / i32
 ```
 
-The canonical reference implementation must be derived from the exact ExSIA
-path used for model-quality evaluation. AQuA does not use an approximate or
-reconstructed ExSIA algorithm as a substitute.
+Stripe boundaries are not ExSIA configuration. An external
+tiler/accumulator execution plan determines row ranges. `aqua-runtime`
+represents and validates that plan; it does not calculate tiles, hardware
+capacity, or scratchpad placement. ExSIA configuration continues to own
+algorithm parameters such as block size and target precision.
 
-Until those semantics are frozen, the software boundary may exist without
-implementing quantization arithmetic.
+The ExSIA golden identity includes the activation input, ExSIA configuration,
+and externally supplied stripe execution plan. Changing stripe grouping can
+change stripe exponents and therefore execution semantics.
 
-The future BSV implementation will consume the same canonical input semantics
-and will be validated against the software reference.
+Residual coordinates store stripe-local row and original logical K. Block and
+element indices are derived debugging views, not stored coordinates. RACO is
+the planned downstream consumer of `ResidualStripe`; no RACO crate,
+packetization, executor, or correction path exists yet. AQuA uses RACO as the
+official residual-compensation name and does not copy legacy naming from
+earlier implementations.
+
+The Rust AQuA reference is the canonical semantic contract that the future BSV
+implementation must reproduce. AQuA deliberately flushes subnormal activation
+values to zero to define hardware-oriented behavior clearly.
 
 ## Tensor boundary
 
@@ -178,15 +204,15 @@ cargo run -p aqua-host
 
 ## Roadmap
 
-1. Establish the ExSIA software domain and freeze the canonical ExSIA
-   semantics used for model-quality evaluation.
+1. Implement canonical dequantization from `QuantizedValues`, stripe theta, and
+   `ResidualStripe` back to F32.
 2. Generate golden vectors from real Candle LLM activations.
-3. Define the canonical ExSIA quantized output and metadata contract.
-4. Implement bit-exact BSV ExSIA and compare against the software reference.
-5. Connect ExSIA directly to systolic-array execution.
+3. Implement RACO consumption of canonical `ResidualStripe` events.
+4. Implement bit-exact BSV ExSIA and compare against the Rust reference.
+5. Connect ExSIA and RACO to systolic-array execution.
 6. Add accumulator and transformer nonlinear operations.
 7. Keep intermediate tensors accelerator-resident across operation sequences.
 
-No canonical ExSIA quantization implementation, ExSIF, systolic array,
-transformer operation, KV cache, accelerator-resident tensor manager, UART,
-PCIe, DMA, or FPGA board support is implemented yet.
+Dequantization, RACO, ExSIF, the BSV datapath, systolic-array execution,
+transformer operations, KV cache, accelerator-resident tensor management,
+UART, PCIe, DMA, and FPGA board support are not implemented yet.

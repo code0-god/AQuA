@@ -16,4 +16,4 @@ pub use error::ExsiaError;
 pub use input::ExsiaInput;
 pub use output::{ExsiaOutput, QuantizedValues};
 pub use reference::ReferenceExsia;
-pub use residual::{ResidualEntry, Residuals};
+pub use residual::{ResidualEvent, ResidualStripe};
