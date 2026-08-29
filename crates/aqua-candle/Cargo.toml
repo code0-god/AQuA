@@ -8,6 +8,7 @@ license.workspace = true
 aqua-exsia = { path = "../aqua-exsia" }
 aqua-protocol = { path = "../aqua-protocol" }
 aqua-runtime = { path = "../aqua-runtime" }
+aqua-weight = { path = "../aqua-weight" }
 candle-core = { path = "../../third_party/candle/candle-core", features = ["aqua"] }
 
 [lib]
