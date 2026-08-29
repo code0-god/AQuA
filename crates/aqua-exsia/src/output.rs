@@ -88,9 +88,14 @@ impl QuantizedValues {
 /// Final software-visible ExSIA result.
 ///
 /// The dense activation values are represented at the selected target
-/// precision. Stripe theta values and stripe-scoped residuals are retained
-/// separately because they are required to reconstruct the wide integer
-/// representation.
+/// precision. `dequantize_dense` provides a lossy Q-only dense emulation:
+/// it uses only quantized values and stripe theta values, and deliberately
+/// excludes stripe-scoped residuals. It is not the future residual-aware
+/// canonical reconstruction; that separate RaCo path will consume the
+/// retained residual stripes.
+///
+/// Stripe theta values and stripe-scoped residuals are retained separately
+/// for that future RaCo use.
 ///
 /// Invariants:
 /// - `stripe_theta.len() == residual_stripes.len()`

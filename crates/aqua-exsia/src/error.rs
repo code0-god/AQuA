@@ -13,6 +13,14 @@ pub enum ExsiaError {
         len: usize,
         block_size: usize,
     },
+    InvalidOutputElementCount {
+        expected: usize,
+        actual: usize,
+    },
+    InvalidStripeThetaCount {
+        expected: usize,
+        actual: usize,
+    },
     InvalidStripeBlockCount {
         stripe_index: usize,
         expected: usize,
@@ -54,6 +62,14 @@ impl fmt::Display for ExsiaError {
                     "invalid ExSIA block length {len}; block size is {block_size}"
                 )
             }
+            Self::InvalidOutputElementCount { expected, actual } => write!(
+                formatter,
+                "ExSIA output element count mismatch: expected {expected}, got {actual}"
+            ),
+            Self::InvalidStripeThetaCount { expected, actual } => write!(
+                formatter,
+                "ExSIA stripe-theta count mismatch: expected {expected}, got {actual}"
+            ),
             Self::InvalidStripeBlockCount {
                 stripe_index,
                 expected,
@@ -91,6 +107,8 @@ impl Error for ExsiaError {
             Self::InvalidExecutionPlan(error) => Some(error),
             Self::InvalidBlockSize { .. }
             | Self::InvalidBlockLength { .. }
+            | Self::InvalidOutputElementCount { .. }
+            | Self::InvalidStripeThetaCount { .. }
             | Self::InvalidStripeBlockCount { .. }
             | Self::InvalidStripeBlockWidth { .. }
             | Self::InvalidStripeBlockMask { .. } => None,
