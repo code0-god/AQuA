@@ -1,7 +1,13 @@
 //! Accelerator execution boundary independent of Candle and transport.
 
+mod geometry;
+
 use aqua_protocol::{AquaDType, TensorDesc, TensorDescError};
 use std::{error::Error, fmt};
+
+pub use geometry::{
+    ActivationExecutionPlan, ActivationMatrixShape, ExecutionPlanError, StripePlan,
+};
 
 /// Canonical host-side activation tensor for AQuA.
 ///
@@ -47,7 +53,8 @@ impl HostTensor {
     }
 }
 
-pub trait AquaExecutor {
+/// Host-tensor execution boundary independent of Candle operation dispatch.
+pub trait HostTensorExecutor {
     // 구현체가 따라야 하는 공통 실행 interface.
     type Error: Error + Send + Sync + 'static; // associated type + trait bounds.
     type Output;
