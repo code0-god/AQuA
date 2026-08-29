@@ -57,8 +57,8 @@ pub(crate) fn quantize_block(
     // 다시 FP exponent를 계산하지 않도록 저장.
     let mut exponents = [math::NEG_INF_EXP; EXSIA_BLOCK_SIZE];
 
-    for i in 0..values.len() {
-        let exp = math::unbiased_exp(values[i]);
+    for (i, &value) in values.iter().enumerate() {
+        let exp = math::unbiased_exp(value);
 
         exponents[i] = exp;
 
@@ -117,8 +117,8 @@ pub(crate) fn quantize_block(
         n: 0,
     };
 
-    for i in 0..values.len() {
-        let q = math::quantize_i32(values[i], theta_pre);
+    for (i, &value) in values.iter().enumerate() {
+        let q = math::quantize_i32(value, theta_pre);
 
         wide.push(q);
 
@@ -147,12 +147,12 @@ pub(crate) fn quantize_block(
     let mut has_integer_outlier = false;
     let mut final_exp = math::NEG_INF_EXP;
 
-    for i in 0..values.len() {
+    for (i, &q) in wide.iter().enumerate() {
         if mask_contains(outlier_mask, i) {
             continue;
         }
 
-        if math::is_sigma_outlier(wide[i], &stats, config.sigma()) {
+        if math::is_sigma_outlier(q, &stats, config.sigma()) {
             // integer-domain sigma detector가 선택한 element를
             // 최종 outlier mask에 추가.
             mask_set(&mut outlier_mask, i);
@@ -192,8 +192,8 @@ pub(crate) fn quantize_block(
      */
 
     if has_integer_outlier && theta_final != theta_pre {
-        for i in 0..values.len() {
-            wide[i] = math::quantize_i32(values[i], theta_final);
+        for (quantized, &value) in wide.iter_mut().zip(values) {
+            *quantized = math::quantize_i32(value, theta_final);
         }
     }
 
