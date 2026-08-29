@@ -1,0 +1,15 @@
+[package]
+name = "aqua-raco"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+aqua-exsia = { path = "../aqua-exsia" }
+aqua-protocol = { path = "../aqua-protocol" }
+
+[dev-dependencies]
+aqua-runtime = { path = "../aqua-runtime" }
+
+[lib]
+path = "src/lib.rs"
