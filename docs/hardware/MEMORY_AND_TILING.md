@@ -166,7 +166,7 @@ weight_global_row =
     + local_k_group
 ```
 
-`macro_k_groups = ceil(macro_k_count / array_dim)`. HP1 metadata and
+`macro_k_groups = ceil(macro_k_elements / array_dim)`. HP1 metadata and
 accumulator allocations use separate bases and cannot alias activation or
 weight ranges. Slot partition bounds are validated when a macro tile is
 installed. Provider requests carry an already allocated local destination;

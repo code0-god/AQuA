@@ -1,12 +1,20 @@
 //! Accelerator execution boundary independent of Candle and transport.
 
 mod geometry;
+mod hardware;
+mod tiling;
 
 use aqua_protocol::{AquaDType, TensorDesc, TensorDescError};
 use std::{error::Error, fmt};
 
 pub use geometry::{
     ActivationExecutionPlan, ActivationMatrixShape, ExecutionPlanError, StripePlan,
+};
+pub use hardware::{
+    AquaHardwareGeometry, AquaHardwareGeometryBuilder, ExsiaSlotLayout, HardwareGeometryError,
+};
+pub use tiling::{
+    AquaTilePlan, AquaTileSelector, LimitingResource, MatmulShape, TileFactors, TilingError,
 };
 
 /// Canonical host-side activation tensor for AQuA.

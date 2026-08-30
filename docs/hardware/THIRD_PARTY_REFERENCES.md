@@ -123,8 +123,11 @@ Inspected:
 - `ggml/src/ggml-gemmini/ggml-gemmini-args.h`
 - `ggml/src/ggml-gemmini/ggml-gemmini.cpp`
 - `ggml/src/ggml-quants.c`
-- CMake `GEMMINI_SW_PATH` integration
-- relevant Gemmini and HP1 tests
+- `CMakeLists.txt` and `ggml/src/ggml-gemmini/CMakeLists.txt`
+  `GEMMINI_SW_PATH` integration
+- `tests/test-gemmini-matmul.cpp`
+- `tests/test-gemmini-exsia.cpp`
+- `tests/test-gemmini-im2p-routing.cpp`
 
 The pinned repository calls `gemmini_set_tile_ws`, but does not contain its
 implementation. CMake resolves `gemmini.h` from an adjacent external
@@ -137,6 +140,7 @@ Repository: https://github.com/ajou-aisa/RISC-V-DynDNN-gemmini-include
 Commit:     441b550253f0decba974bb8bb5f99535d1db3518
 License:    no LICENSE/COPYING file at that commit
 Checkout:   /tmp/aqua-reference/gemmini-include
+Header:     gemmini.h
 ```
 
 The supplemental header confirms:

@@ -75,8 +75,8 @@ The implemented crates have these responsibilities:
 
 * `aqua-protocol`: Candle-independent tensor and protocol semantics.
 * `aqua-runtime`: canonical F32 `HostTensor` plus validated activation matrix
-  and stripe-plan geometry. It validates plans; it does not choose hardware
-  tiles.
+  and stripe-plan geometry, validated hardware capacities, and deterministic
+  resource-aware macro-tile selection.
 * `aqua-exsia`: ExSIA-specific contracts, the canonical sequential reference,
   and public dense Q-only dequantization. `dequantize_dense` deliberately
   ignores residual events and is not residual-aware reconstruction.
@@ -117,6 +117,12 @@ It is intentionally located in `aqua-candle`; it is not a runtime tiler,
 hardware-capacity model, scratchpad planner, or part of canonical ExSIA
 configuration.
 
+`AquaTileSelector` is separate host/runtime hardware policy. It preserves the
+Gemmini J-then-I-then-K factor growth order while checking independent
+activation, weight, HP1 metadata, accumulator, and full-logical-K ExSIA slot
+capacities. Its selected stripe rows are frozen into a validated
+`ActivationExecutionPlan` before ExSIA execution.
+
 ## ExSIA boundary
 
 The canonical ExSIA input is a validated contiguous F32 `HostTensor` paired
@@ -151,6 +157,8 @@ residency or acceleration. Specifically:
 * Q8_HP1 GGUF profile detection, load interception, canonical weight
   extraction, block-left-shift statistics, and row-scale statistics are
   implemented.
+* Resource-aware Rust macro-tile selection and activation-plan generation are
+  implemented. Physical K fragments remain RTL scheduler policy.
 * There is no full Candle RaCo executor, ExSIF scale integration, physical
   packet format, or accelerator-resident RaCo storage.
 * There is no block-shift LUT contract, BSV HP1 weight provider, physical
@@ -191,6 +199,7 @@ git submodule update --init --recursive
 cargo fmt --check
 cargo check --workspace
 cargo test --workspace
+cargo test -p aqua-runtime
 cargo test -p aqua-candle --test round_trip
 cargo test -p aqua-candle --test aqua_device
 cargo clippy --workspace --all-targets -- -D warnings
