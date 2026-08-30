@@ -2,7 +2,7 @@ SHELL := /bin/bash
 
 BSC ?= bsc
 BUILD_DIR := build
-BSC_PATH := +:src/common:src/memory:src:tb
+BSC_PATH := +:src/common:src/memory:src/control:src:tb
 BSC_DIRS := -bdir $(BUILD_DIR)/bsc -simdir $(BUILD_DIR)/sim \
             -info-dir $(BUILD_DIR)/info
 BSC_COMMON := -p $(BSC_PATH) $(BSC_DIRS) -check-assert \
@@ -18,6 +18,10 @@ BSV_SOURCE_FILES := \
 	src/memory/WeightSpad.bsv \
 	src/memory/Hp1MetaMem.bsv \
 	src/memory/AccumulatorMem.bsv \
+	src/control/AquaWorkTypes.bsv \
+	src/control/MatmulScheduleMath.bsv \
+	src/control/WorkScheduler.bsv \
+	src/control/MatmulScheduler.bsv \
 	src/ExSIAQuantizer.bsv
 
 BSV_TEST_TOPS := \
@@ -25,11 +29,19 @@ BSV_TEST_TOPS := \
 	mkTbHp1MetaMem \
 	mkTbLocalAddr \
 	mkTbScratchpadBank \
-	mkTbAccumulatorMem
+	mkTbAccumulatorMem \
+	mkTbWorkScheduler \
+	mkTbMatmulScheduler
 
-BSV_EXPECT_FAIL_TOPS := mkTbAccumulatorOverflow
+BSV_EXPECT_FAIL_TOPS := \
+	mkTbAccumulatorOverflow \
+	mkTbMatmulStripeGap \
+	mkTbMatmulStripeOverlap \
+	mkTbMatmulStripeOutOfBounds
 
-SYNTH_TOPS := mkMemorySynthTop
+SYNTH_TOPS := \
+	mkMemorySynthTop \
+	mkSchedulerSynthTop
 
 .PHONY: check bsv-test bsv-test-one rtl-one verify clean
 
@@ -63,10 +75,17 @@ bsv-test: | $(BUILD_DIR)/bsc $(BUILD_DIR)/sim $(BUILD_DIR)/info $(BUILD_DIR)/bin
 	  $(BSC) -sim $(BSC_COMMON) -e "$$top" \
 	    -o "$(BUILD_DIR)/bin/$$package"; \
 	  echo "[Bluesim] expect failure $$top"; \
+	  case "$$top" in \
+	    mkTbAccumulatorOverflow) expected='accumulator addition overflow' ;; \
+	    mkTbMatmulStripeGap) expected='stripe publication gap' ;; \
+	    mkTbMatmulStripeOverlap) expected='stripe publication overlap' ;; \
+	    mkTbMatmulStripeOutOfBounds) expected='stripe publication out of bounds' ;; \
+	    *) echo "missing expected failure text for $$top" >&2; exit 2 ;; \
+	  esac; \
 	  output="$$("$(BUILD_DIR)/bin/$$package" 2>&1)"; \
 	  printf '%s\n' "$$output"; \
 	  if [[ "$$output" != *"Dynamic assertion failed"* \
-	        || "$$output" != *"accumulator addition overflow"* ]]; then \
+	        || "$$output" != *"$$expected"* ]]; then \
 	    echo "$$top did not trigger its expected assertion" >&2; \
 	    exit 1; \
 	  fi; \
