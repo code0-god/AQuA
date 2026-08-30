@@ -1,6 +1,6 @@
 package ExSIAQuantizer;
 
-// Future pipeline:
+// Canonical Rust ExSIA semantics are frozen. Future BSV pipeline:
 // Activation Block
 //   Statistics
 //   Outlier Detection
@@ -8,6 +8,6 @@ package ExSIAQuantizer;
 //   Quantization
 // Quantized Activation + Metadata
 //
-// No algorithm is defined until canonical software ExSIA semantics are frozen.
+// This placeholder intentionally contains no datapath in the current phase.
 
 endpackage
