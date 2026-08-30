@@ -6,7 +6,8 @@ AQuA targets an end-to-end LLM accelerator that integrates hardware-native
 adaptive quantization into transformer execution. The current milestone is a
 CPU-shadow Candle integration plus deterministic Rust ExSIA and RaCo
 references, profile-safe Q8_HP1 loading, and canonical integer-weight
-extraction for future BSV implementation.
+extraction, with a resource-aware tiler and executable BSV local-memory,
+scheduler, and provider-staging foundation.
 
 ## Implemented architecture
 
@@ -96,7 +97,9 @@ The implemented crates have these responsibilities:
   to normal CPU execution.
 * `aqua-host`: host-boundary smoke executable plus `inspect-hp1` model
   inspection and canonical parity command.
-* `hw/bsv`: source and testbench boundary for future hardware work.
+* `hw/bsv`: BSC-checked banked activation/weight/HP1/accumulator memories,
+  tiled matmul and block-bounded K schedulers, tagged provider load/store
+  staging, Bluesim contract tests, and representative RTL generation.
 
 `tensor_to_host` accepts supported floating tensors on any Candle device by
 copying them to CPU, converting them to F32, making their logical layout
@@ -158,15 +161,27 @@ residency or acceleration. Specifically:
   extraction, block-left-shift statistics, and row-scale statistics are
   implemented.
 * Resource-aware Rust macro-tile selection and activation-plan generation are
-  implemented. Physical K fragments remain RTL scheduler policy.
+  implemented. BSV schedulers expand stripes into partial DIM-bounded array
+  works and split K into canonical 32-wide-block-bounded fragments.
+* The BSV memory foundation implements typed local addresses, separate banked
+  activation and weight scratchpads, HP1 metadata, wide accumulation, and
+  response-backpressured reads and writes.
+* Tagged BSV load/store staging covers activation, canonical `[J][K]` weight
+  codes, HP1 block/row metadata, raw accumulator output, same-cycle or delayed
+  provider responses, and acknowledgement-gated completion.
 * There is no full Candle RaCo executor, ExSIF scale integration, physical
   packet format, or accelerator-resident RaCo storage.
-* There is no block-shift LUT contract, BSV HP1 weight provider, physical
-  weight image, Q8_HP1 execution path, or RaCo/weight-scale merge.
-* There is no BSV ExSIA datapath, transport, hardware tiler, asynchronous
-  execution, systolic-array connection, or nonlinear-operation integration.
+* There is no model-compiled block-shift LUT, physical provider adapter,
+  weight image, HP1 integer execution path, or RaCo/weight-scale merge.
+* The WS systolic array and PE preload/reorder are deferred; this foundation
+  contains no matrix datapath integration.
+* BSV ExSIA and BSV RaCo execution remain deferred to bit-exact datapath
+  phases.
+* `AquaLoopMatmul` two-context load/execute overlap and physical DMA remain
+  deferred. Current provider interfaces are logical simulation boundaries,
+  not an interconnect implementation.
 * Intermediate tensors are not accelerator-resident.
-* There is no ExSIF, KV-cache offload, UART, PCIe, DMA, or FPGA board support.
+* There is no ExSIF, KV-cache offload, UART, PCIe, or FPGA board support.
 
 RaCo remains separate from Q-only dequantization. The Rust core stops at raw
 integer correction; floating scale integration and Candle result addition are
@@ -205,14 +220,16 @@ cargo test -p aqua-candle --test aqua_device
 cargo clippy --workspace --all-targets -- -D warnings
 cargo run -p aqua-host
 cargo run -p aqua-host --release -- inspect-hp1 <model.gguf>
+make -C hw/bsv verify
 ```
 
 ## Roadmap
 
-1. Define the model-compiled block-shift LUT contract from measured profiles.
-2. Implement the BSV Q8_HP1 weight provider without changing canonical weight
-   meaning.
-3. Integrate RaCo correction scaling with future ExSIF weight scales.
-4. Implement and bit-exactly validate the BSV ExSIA and RaCo datapaths.
-5. Add explicit hardware tiling, transport, and asynchronous execution.
-6. Add nonlinear transformer operations and accelerator-resident tensors.
+1. Migrate and validate the weight-stationary systolic array and PE preload
+   reorder without changing canonical `[J][K]` provider meaning.
+2. Add the model-compiled block-shift LUT and HP1 integer execution units.
+3. Implement and bit-exactly validate the BSV ExSIA and RaCo datapaths.
+4. Add `AquaLoopMatmul` two-context load/execute/store overlap.
+5. Attach a physical DMA adapter below the tagged provider boundary.
+6. Integrate RaCo/ExSIF scaling, nonlinear transformer operations, and
+   accelerator-resident tensors.
