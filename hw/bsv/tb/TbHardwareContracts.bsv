@@ -1,7 +1,6 @@
 package TbHardwareContracts;
 
 import Assert::*;
-import AquaConfig::*;
 import AquaTypes::*;
 
 (* synthesize *)

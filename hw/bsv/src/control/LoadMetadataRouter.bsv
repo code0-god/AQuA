@@ -3,7 +3,6 @@ package LoadMetadataRouter;
 import Assert::*;
 import AquaMemoryTypes::*;
 import LoadChannel::*;
-import LoadControllerTypes::*;
 import LoadRequestBuilder::*;
 
 interface LoadMetadataRouterIfc#(numeric type arrayDim);

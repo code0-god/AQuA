@@ -4,13 +4,12 @@ import Assert::*;
 import AccumulatorMem::*;
 import AquaLocalAddr::*;
 import AquaMemorySubsystem::*;
-import AquaMemorySubsystemTypes::*;
 import AquaMemoryTypes::*;
 import AquaTypes::*;
 import AquaWorkTypes::*;
 import Hp1MetaMem::*;
 import MockAquaProvider::*;
-import ScratchpadBank::*;
+import Scratchpad::*;
 import Vector::*;
 
 typedef ScratchpadRowPayload#(16, Int#(8)) ActivationPayload;

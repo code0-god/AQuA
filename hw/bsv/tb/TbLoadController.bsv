@@ -5,8 +5,8 @@ import AquaLocalAddr::*;
 import AquaMemoryTypes::*;
 import AquaTypes::*;
 import AquaWorkTypes::*;
+import LoadChannel::*;
 import LoadController::*;
-import LoadControllerTypes::*;
 
 function DefaultAquaLocalAddr localAddress(
     AquaLocalRegion region,

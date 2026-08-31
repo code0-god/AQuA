@@ -55,4 +55,34 @@ function AquaBankedRow#(bankWidth, rowWidth) mapGlobalRow(
     end
 endfunction
 
+function AquaLocalAddr#(slotWidth, bankWidth, rowWidth) offsetBankedAddress(
+    AquaLocalAddr#(slotWidth, bankWidth, rowWidth) base,
+    UInt#(32) offset,
+    Integer bankCount
+) provisos (
+    Add#(bankPadding, bankWidth, 40),
+    Add#(rowPadding, rowWidth, 40)
+);
+    if (bankCount <= 0) begin
+        return error("bank count must be positive");
+    end
+    else begin
+        UInt#(40) baseBank = zeroExtend(unpack(base.bank));
+        UInt#(40) linear =
+            zeroExtend(unpack(base.row)) * fromInteger(bankCount)
+            + baseBank
+            + zeroExtend(offset);
+        UInt#(40) bank = linear % fromInteger(bankCount);
+        UInt#(40) row = linear / fromInteger(bankCount);
+        // Controller boundary assertions prove bank and row fit before this
+        // pure address derivation is used.
+        return AquaLocalAddr {
+            region: base.region,
+            slot: base.slot,
+            bank: truncate(pack(bank)),
+            row: truncate(pack(row))
+        };
+    end
+endfunction
+
 endpackage

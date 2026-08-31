@@ -1,11 +1,31 @@
 package MetadataResponseStager;
 
 import Assert::*;
-import AquaMemoryResponseValidation::*;
+import AquaLocalAddr::*;
 import AquaMemoryTypes::*;
+import LoadController::*;
 import AquaTypes::*;
 import Hp1MetaMem::*;
-import LoadControllerTypes::*;
+
+function UInt#(32) metadataLocalBank(AquaMemoryTag tag);
+    return zeroExtend(unpack(tag.localDestination.bank));
+endfunction
+
+function UInt#(32) metadataLocalRow(AquaMemoryTag tag);
+    return zeroExtend(unpack(tag.localDestination.row));
+endfunction
+
+function Bool validMetadataResponse(
+    AquaMemoryTag tag,
+    AquaMemoryKind expectedKind,
+    Integer entryCount
+);
+    return
+        tag.kind == expectedKind
+        && tag.localDestination.region == LocalHp1Meta
+        && metadataLocalBank(tag) == 0
+        && metadataLocalRow(tag) < fromInteger(entryCount);
+endfunction
 
 interface MetadataResponseStagerIfc#(
     numeric type metaEntries,
@@ -59,7 +79,7 @@ module mkMetadataResponseStager#(
     method Action putBlockShiftResponse(
         AquaMemoryReadResponse#(Hp1BlockScale#(shiftWidth)) response
     );
-        UInt#(32) row = localRow(response.tag);
+        UInt#(32) row = metadataLocalRow(response.tag);
         Hp1MetaAddr#(metaEntries) address = truncate(pack(row));
         Bool valid = load.blockShiftResponseReady(response.tag)
             && validMetadataResponse(
@@ -86,7 +106,7 @@ module mkMetadataResponseStager#(
     method Action putQueuedBlockShiftResponse(
         AquaMemoryReadResponse#(Hp1BlockScale#(shiftWidth)) response
     );
-        UInt#(32) row = localRow(response.tag);
+        UInt#(32) row = metadataLocalRow(response.tag);
         Hp1MetaAddr#(metaEntries) address = truncate(pack(row));
         Bool valid = load.queuedBlockShiftResponseReady(response.tag)
             && validMetadataResponse(
@@ -114,7 +134,7 @@ module mkMetadataResponseStager#(
     method Action putRowScaleResponse(
         AquaMemoryReadResponse#(UInt#(shiftWidth)) response
     );
-        UInt#(32) row = localRow(response.tag);
+        UInt#(32) row = metadataLocalRow(response.tag);
         Hp1MetaAddr#(metaEntries) address = truncate(pack(row));
         Bool valid = load.rowScaleResponseReady(response.tag)
             && validMetadataResponse(
@@ -141,7 +161,7 @@ module mkMetadataResponseStager#(
     method Action putQueuedRowScaleResponse(
         AquaMemoryReadResponse#(UInt#(shiftWidth)) response
     );
-        UInt#(32) row = localRow(response.tag);
+        UInt#(32) row = metadataLocalRow(response.tag);
         Hp1MetaAddr#(metaEntries) address = truncate(pack(row));
         Bool valid = load.queuedRowScaleResponseReady(response.tag)
             && validMetadataResponse(

@@ -1,7 +1,6 @@
 package MemorySubsystemSynthTop;
 
 import AquaMemorySubsystem::*;
-import AquaMemorySubsystemTypes::*;
 
 (* synthesize *)
 module mkMemorySubsystemSynthTop(Empty);

@@ -9,38 +9,24 @@ BSC_COMMON := -p $(BSC_PATH) $(BSC_DIRS) -check-assert \
               -keep-fires -show-schedule
 
 BSV_SOURCE_FILES := \
-	src/common/AquaConfig.bsv \
 	src/common/AquaTypes.bsv \
-	src/common/AquaMath.bsv \
 	src/memory/AquaLocalAddr.bsv \
-	src/control/AquaWorkTypes.bsv \
+	src/common/AquaWorkTypes.bsv \
 	src/memory/AquaMemoryTypes.bsv \
-	src/memory/AquaMemoryAddressing.bsv \
-	src/memory/AquaMemoryResponseValidation.bsv \
-	src/memory/ScratchpadBank.bsv \
-	src/memory/ActivationSpad.bsv \
-	src/memory/WeightSpad.bsv \
+	src/memory/Scratchpad.bsv \
 	src/memory/Hp1MetaMem.bsv \
 	src/memory/AccumulatorMem.bsv \
-	src/control/LoadControllerTypes.bsv \
 	src/control/LoadChannel.bsv \
 	src/control/LoadRequestBuilder.bsv \
-	src/control/LoadWorkValidation.bsv \
 	src/control/LoadMetadataRouter.bsv \
-	src/control/LoadResponseRouterTypes.bsv \
 	src/control/LoadResponseRouter.bsv \
 	src/control/LoadController.bsv \
-	src/control/StoreRequestBuilder.bsv \
 	src/control/StoreController.bsv \
-	src/memory/AquaMemorySubsystemTypes.bsv \
-	src/memory/ScratchpadResponseStagerTypes.bsv \
 	src/memory/ScratchpadResponseStager.bsv \
 	src/memory/MetadataResponseStager.bsv \
 	src/memory/AquaMemorySubsystem.bsv \
-	src/control/MatmulScheduleMath.bsv \
 	src/control/WorkScheduler.bsv \
-	src/control/MatmulScheduler.bsv \
-	src/ExSIAQuantizer.bsv
+	src/control/MatmulScheduler.bsv
 
 BSV_TEST_TOPS := \
 	mkTbHardwareContracts \

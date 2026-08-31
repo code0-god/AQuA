@@ -3,7 +3,12 @@ package LoadChannel;
 import Assert::*;
 import AquaMemoryTypes::*;
 import FIFOF::*;
-import LoadControllerTypes::*;
+
+interface LoadRequestSourceIfc;
+    method Bool requestValid;
+    method AquaMemoryReadRequest request;
+    method Action consumeRequest;
+endinterface
 
 interface LoadChannelIfc#(numeric type arrayDim);
     interface LoadRequestSourceIfc requests;

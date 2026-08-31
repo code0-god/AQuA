@@ -1,15 +1,82 @@
 package ScratchpadResponseStager;
 
-import ActivationSpad::*;
 import Assert::*;
 import AquaLocalAddr::*;
-import AquaMemoryResponseValidation::*;
 import AquaMemoryTypes::*;
-import LoadControllerTypes::*;
-import ScratchpadBank::*;
-import ScratchpadResponseStagerTypes::*;
+import LoadController::*;
+import Scratchpad::*;
 import Vector::*;
-import WeightSpad::*;
+
+function UInt#(32) scratchpadLocalBank(AquaMemoryTag tag);
+    return zeroExtend(unpack(tag.localDestination.bank));
+endfunction
+
+function UInt#(32) scratchpadLocalRow(AquaMemoryTag tag);
+    return zeroExtend(unpack(tag.localDestination.row));
+endfunction
+
+function Bool validScratchpadResponse(
+    AquaMemoryTag tag,
+    AquaMemoryKind expectedKind,
+    AquaLocalRegion expectedRegion,
+    Integer bankCount,
+    Integer rowCount
+);
+    return
+        tag.kind == expectedKind
+        && tag.localDestination.region == expectedRegion
+        && scratchpadLocalBank(tag) < fromInteger(bankCount)
+        && scratchpadLocalRow(tag) < fromInteger(rowCount);
+endfunction
+
+interface ScratchpadResponseStagerIfc#(
+    numeric type arrayDim,
+    numeric type spadBanks,
+    numeric type spadRows,
+    numeric type activationWidth,
+    numeric type weightWidth
+);
+    method Bool activationResponseReady(
+        ActivationMemoryResponse#(arrayDim, activationWidth) response
+    );
+    method Action putActivationResponse(
+        ActivationMemoryResponse#(arrayDim, activationWidth) response
+    );
+    method Bool queuedActivationResponseReady(
+        ActivationMemoryResponse#(arrayDim, activationWidth) response
+    );
+    method Action putQueuedActivationResponse(
+        ActivationMemoryResponse#(arrayDim, activationWidth) response
+    );
+    method Bool weightResponseReady(
+        WeightMemoryResponse#(arrayDim, weightWidth) response
+    );
+    method Action putWeightResponse(
+        WeightMemoryResponse#(arrayDim, weightWidth) response
+    );
+    method Bool queuedWeightResponseReady(
+        WeightMemoryResponse#(arrayDim, weightWidth) response
+    );
+    method Action putQueuedWeightResponse(
+        WeightMemoryResponse#(arrayDim, weightWidth) response
+    );
+    interface Vector#(
+        spadBanks,
+        ScratchpadBankIfc#(
+            spadRows,
+            arrayDim,
+            Int#(activationWidth)
+        )
+    ) activationBanks;
+    interface Vector#(
+        spadBanks,
+        ScratchpadBankIfc#(
+            spadRows,
+            arrayDim,
+            Bit#(weightWidth)
+        )
+    ) weightBanks;
+endinterface
 
 module mkScratchpadResponseStager#(
     LoadControllerIfc#(arrayDim, spadBanks, metaEntries) load
@@ -23,18 +90,18 @@ module mkScratchpadResponseStager#(
     Add#(spadBankPadding, TLog#(spadBanks), 32),
     Add#(spadRowPadding, TLog#(TAdd#(spadRows, 1)), 32)
 );
-    ActivationSpadIfc#(
+    BankedScratchpadIfc#(
         spadBanks,
         spadRows,
         arrayDim,
         Int#(activationWidth)
-    ) activations <- mkActivationSpad;
-    WeightSpadIfc#(
+    ) activations <- mkBankedScratchpad;
+    BankedScratchpadIfc#(
         spadBanks,
         spadRows,
         arrayDim,
         Bit#(weightWidth)
-    ) weights <- mkWeightSpad;
+    ) weights <- mkBankedScratchpad;
 
     method Bool activationResponseReady(
         AquaMemoryReadResponse#(
@@ -55,8 +122,8 @@ module mkScratchpadResponseStager#(
             ScratchpadRowPayload#(arrayDim, Int#(activationWidth))
         ) response
     );
-        UInt#(32) bank = localBank(response.tag);
-        UInt#(32) row = localRow(response.tag);
+        UInt#(32) bank = scratchpadLocalBank(response.tag);
+        UInt#(32) row = scratchpadLocalRow(response.tag);
         UInt#(TLog#(spadBanks)) bankIndex = truncate(bank);
         ScratchpadRowAddr#(spadRows) rowAddress = truncate(pack(row));
         Bool valid = load.activationResponseReady(response.tag)
@@ -96,8 +163,8 @@ module mkScratchpadResponseStager#(
             ScratchpadRowPayload#(arrayDim, Int#(activationWidth))
         ) response
     );
-        UInt#(32) bank = localBank(response.tag);
-        UInt#(32) row = localRow(response.tag);
+        UInt#(32) bank = scratchpadLocalBank(response.tag);
+        UInt#(32) row = scratchpadLocalRow(response.tag);
         UInt#(TLog#(spadBanks)) bankIndex = truncate(bank);
         ScratchpadRowAddr#(spadRows) rowAddress = truncate(pack(row));
         Bool valid = load.queuedActivationResponseReady(response.tag)
@@ -138,8 +205,8 @@ module mkScratchpadResponseStager#(
             ScratchpadRowPayload#(arrayDim, Bit#(weightWidth))
         ) response
     );
-        UInt#(32) bank = localBank(response.tag);
-        UInt#(32) row = localRow(response.tag);
+        UInt#(32) bank = scratchpadLocalBank(response.tag);
+        UInt#(32) row = scratchpadLocalRow(response.tag);
         UInt#(TLog#(spadBanks)) bankIndex = truncate(bank);
         ScratchpadRowAddr#(spadRows) rowAddress = truncate(pack(row));
         Bool valid = load.weightResponseReady(response.tag)
@@ -179,8 +246,8 @@ module mkScratchpadResponseStager#(
             ScratchpadRowPayload#(arrayDim, Bit#(weightWidth))
         ) response
     );
-        UInt#(32) bank = localBank(response.tag);
-        UInt#(32) row = localRow(response.tag);
+        UInt#(32) bank = scratchpadLocalBank(response.tag);
+        UInt#(32) row = scratchpadLocalRow(response.tag);
         UInt#(TLog#(spadBanks)) bankIndex = truncate(bank);
         ScratchpadRowAddr#(spadRows) rowAddress = truncate(pack(row));
         Bool valid = load.queuedWeightResponseReady(response.tag)

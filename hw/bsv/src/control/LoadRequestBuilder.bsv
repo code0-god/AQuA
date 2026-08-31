@@ -1,6 +1,6 @@
 package LoadRequestBuilder;
 
-import AquaMemoryAddressing::*;
+import AquaLocalAddr::*;
 import AquaMemoryTypes::*;
 import AquaTypes::*;
 import AquaWorkTypes::*;

@@ -1,8 +1,6 @@
 package WorkScheduler;
 
 import Assert::*;
-import AquaConfig::*;
-import AquaMath::*;
 import AquaTypes::*;
 import AquaWorkTypes::*;
 
@@ -32,10 +30,9 @@ function KFragment makeFragment(
     MatrixExtent blockSize = fromInteger(aquaBlockSize);
     MatrixExtent remainingInBlock =
         blockSize - (fragmentStart % blockSize);
-    MatrixExtent count = min3(
+    MatrixExtent count = min(
         arrayDimension,
-        remaining,
-        remainingInBlock
+        min(remaining, remainingInBlock)
     );
     MatrixExtent fragmentEnd = fragmentStart + count;
     return KFragment {

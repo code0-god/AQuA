@@ -1,4 +1,4 @@
-package ScratchpadBank;
+package Scratchpad;
 
 import Assert::*;
 import FIFOF::*;
@@ -88,6 +88,29 @@ module mkScratchpadBank(ScratchpadBankIfc#(rows, lanes, element_t))
         end
         writeAccepted.send;
     endmethod
+endmodule
+
+interface BankedScratchpadIfc#(
+    numeric type banks,
+    numeric type rowsPerBank,
+    numeric type lanes,
+    type element_t
+);
+    interface Vector#(
+        banks,
+        ScratchpadBankIfc#(rowsPerBank, lanes, element_t)
+    ) banks;
+endinterface
+
+module mkBankedScratchpad(
+    BankedScratchpadIfc#(banks, rowsPerBank, lanes, element_t)
+) provisos (Bits#(element_t, elementWidth));
+    Vector#(
+        banks,
+        ScratchpadBankIfc#(rowsPerBank, lanes, element_t)
+    ) bankVector <- replicateM(mkScratchpadBank);
+
+    interface banks = bankVector;
 endmodule
 
 endpackage
