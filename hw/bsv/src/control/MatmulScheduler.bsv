@@ -38,38 +38,53 @@ function ActivationStripe makeFullStripe(
 endfunction
 
 
+typedef struct {
+    MatrixExtent macroNStart;
+    MatrixExtent iStart;
+    MatrixExtent jStart;
+} WorkPosition deriving (Bits, Eq, FShow);
+
+function MatrixExtent stripeRowEnd(ActivationStripe stripe);
+    return stripe.rowBegin + stripe.rowCount;
+endfunction
+
+function MatrixExtent macroNEnd(
+    AquaMatmulDescriptor descriptor,
+    MatrixExtent macroNStart
+);
+    MatrixExtent macroNCount = min(
+        descriptor.macroNTileColumns,
+        descriptor.n - macroNStart
+    );
+    return macroNStart + macroNCount;
+endfunction
+
+
 // 현재 stripe와 N macro tile 안에서 하나의 DIM-bounded ArrayWork를 생성한다.
 function ArrayWork#(arrayDim) makeArrayWork(
     MatrixExtent arrayDimension,
     AquaMatmulDescriptor descriptor,
     ActivationStripe stripe,
-    MatrixExtent macroNStart,
-    MatrixExtent iStart,
-    MatrixExtent jStart
+    WorkPosition position
 );
 
     // 현재 stripe의 마지막 M row 다음 위치.
-    MatrixExtent stripeEnd = stripe.rowBegin + stripe.rowCount;
+    MatrixExtent stripeEnd = stripeRowEnd(stripe);
 
     // 마지막 N macro tile이 matrix N 경계를 넘지 않도록 실제 column 수를 제한한다.
-    MatrixExtent macroNCount = min(
-        descriptor.macroNTileColumns,
-        descriptor.n - macroNStart
-    );
-
-    // 현재 N macro tile의 마지막 column 다음 위치.
-    MatrixExtent macroNEnd = macroNStart + macroNCount;
+    MatrixExtent macroTileEnd =
+        macroNEnd(descriptor, position.macroNStart);
 
     // 이번 physical array work가 처리할 실제 M row 수.
     MatrixExtent iCount = min(
         arrayDimension,
-        stripeEnd - iStart
+        stripeEnd - position.iStart
     );
 
     // 이번 physical array work가 처리할 실제 N/J column 수.
     MatrixExtent jCount = min(
         arrayDimension,
-        macroNEnd - jStart
+        macroTileEnd - position.jStart
     );
 
     return ArrayWork {
@@ -77,8 +92,8 @@ function ArrayWork#(arrayDim) makeArrayWork(
         stripeId: stripe.stripeId,
 
         // 이번 array work가 시작하는 global M/N 좌표.
-        iStart: iStart,
-        jStart: jStart,
+        iStart: position.iStart,
+        jStart: position.jStart,
 
         // iCount/jCount는 항상 arrayDim 이하이므로 ArrayCount로 축소한다.
         iCount: truncate(iCount),
@@ -91,6 +106,46 @@ function ArrayWork#(arrayDim) makeArrayWork(
 
 endfunction
 
+
+function Maybe#(WorkPosition) nextWorkPosition(
+    AquaMatmulDescriptor descriptor,
+    ActivationStripe stripe,
+    WorkPosition current,
+    ArrayWork#(arrayDim) work
+);
+    MatrixExtent stripeEnd = stripeRowEnd(stripe);
+    MatrixExtent macroTileEnd =
+        macroNEnd(descriptor, current.macroNStart);
+    MatrixExtent nextJ =
+        current.jStart + zeroExtend(work.jCount);
+    MatrixExtent nextI =
+        current.iStart + zeroExtend(work.iCount);
+
+    if (nextJ < macroTileEnd) begin
+        return tagged Valid WorkPosition {
+            macroNStart: current.macroNStart,
+            iStart: current.iStart,
+            jStart: nextJ
+        };
+    end
+    else if (nextI < stripeEnd) begin
+        return tagged Valid WorkPosition {
+            macroNStart: current.macroNStart,
+            iStart: nextI,
+            jStart: current.macroNStart
+        };
+    end
+    else if (macroTileEnd < descriptor.n) begin
+        return tagged Valid WorkPosition {
+            macroNStart: macroTileEnd,
+            iStart: stripe.rowBegin,
+            jStart: macroTileEnd
+        };
+    end
+    else begin
+        return tagged Invalid;
+    end
+endfunction
 
 
 interface MatmulSchedulerIfc#(numeric type arrayDim);
@@ -123,9 +178,11 @@ module mkMatmulScheduler(MatmulSchedulerIfc#(arrayDim));
         <- mkReg(tagged Invalid);
     Reg#(Maybe#(ActivationStripe)) stripeLookahead
         <- mkReg(tagged Invalid);
-    Reg#(MatrixExtent) macroNStart <- mkReg(0);
-    Reg#(MatrixExtent) iStart <- mkReg(0);
-    Reg#(MatrixExtent) jStart <- mkReg(0);
+    Reg#(WorkPosition) workPosition <- mkReg(WorkPosition {
+        macroNStart: 0,
+        iStart: 0,
+        jStart: 0
+    });
     Reg#(MatrixExtent) publishedUntil <- mkReg(0);
     Reg#(StripeId) nextStripeId <- mkReg(0);
 
@@ -156,9 +213,11 @@ module mkMatmulScheduler(MatmulSchedulerIfc#(arrayDim));
         activeDescriptor <= tagged Valid descriptor;
         publishedUntil <= 0;
         nextStripeId <= 0;
-        macroNStart <= 0;
-        iStart <= 0;
-        jStart <= 0;
+        workPosition <= WorkPosition {
+            macroNStart: 0,
+            iStart: 0,
+            jStart: 0
+        };
 
         if (descriptor.mode == FullMatrix) begin
             ActivationStripe first = makeFullStripe(descriptor, 0, 0);
@@ -227,9 +286,11 @@ module mkMatmulScheduler(MatmulSchedulerIfc#(arrayDim));
         MatrixExtent rowEnd = truncate(rowEndWide);
         if (!isValid(activeStripe)) begin
             activeStripe <= tagged Valid stripe;
-            macroNStart <= 0;
-            iStart <= stripe.rowBegin;
-            jStart <= 0;
+            workPosition <= WorkPosition {
+                macroNStart: 0,
+                iStart: stripe.rowBegin,
+                jStart: 0
+            };
         end
         else begin
             stripeLookahead <= tagged Valid stripe;
@@ -248,9 +309,7 @@ module mkMatmulScheduler(MatmulSchedulerIfc#(arrayDim));
             arrayDimension,
             fromMaybe(?, activeDescriptor),
             fromMaybe(?, activeStripe),
-            macroNStart,
-            iStart,
-            jStart
+            workPosition
         );
     endmethod
 
@@ -258,34 +317,22 @@ module mkMatmulScheduler(MatmulSchedulerIfc#(arrayDim));
         if (isValid(activeDescriptor) && isValid(activeStripe));
         let descriptor = fromMaybe(?, activeDescriptor);
         let stripe = fromMaybe(?, activeStripe);
+        let position = workPosition;
         ArrayWork#(arrayDim) work = makeArrayWork(
             arrayDimension,
             descriptor,
             stripe,
-            macroNStart,
-            iStart,
-            jStart
+            position
         );
-        MatrixExtent stripeEnd = stripe.rowBegin + stripe.rowCount;
-        MatrixExtent macroNCount = min(
-            descriptor.macroNTileColumns,
-            descriptor.n - macroNStart
+        Maybe#(WorkPosition) next = nextWorkPosition(
+            descriptor,
+            stripe,
+            position,
+            work
         );
-        MatrixExtent macroNEnd = macroNStart + macroNCount;
-        MatrixExtent nextJ = jStart + zeroExtend(work.jCount);
-        MatrixExtent nextI = iStart + zeroExtend(work.iCount);
 
-        if (nextJ < macroNEnd) begin
-            jStart <= nextJ;
-        end
-        else if (nextI < stripeEnd) begin
-            iStart <= nextI;
-            jStart <= macroNStart;
-        end
-        else if (macroNEnd < descriptor.n) begin
-            macroNStart <= macroNEnd;
-            iStart <= stripe.rowBegin;
-            jStart <= macroNEnd;
+        if (isValid(next)) begin
+            workPosition <= fromMaybe(?, next);
         end
         else begin
             completions.enq(StripeCompletion {
@@ -308,9 +355,11 @@ module mkMatmulScheduler(MatmulSchedulerIfc#(arrayDim));
                     end
                     activeStripe <= tagged Valid promoted;
                     stripeLookahead <= following;
-                    macroNStart <= 0;
-                    iStart <= promoted.rowBegin;
-                    jStart <= 0;
+                    workPosition <= WorkPosition {
+                        macroNStart: 0,
+                        iStart: promoted.rowBegin,
+                        jStart: 0
+                    };
                 end
                 else begin
                     activeStripe <= tagged Invalid;
@@ -322,14 +371,19 @@ module mkMatmulScheduler(MatmulSchedulerIfc#(arrayDim));
                     let promoted = fromMaybe(?, stripeLookahead);
                     activeStripe <= tagged Valid promoted;
                     stripeLookahead <= tagged Invalid;
-                    macroNStart <= 0;
-                    iStart <= promoted.rowBegin;
-                    jStart <= 0;
+                    workPosition <= WorkPosition {
+                        macroNStart: 0,
+                        iStart: promoted.rowBegin,
+                        jStart: 0
+                    };
                 end
                 else begin
                     activeStripe <= tagged Invalid;
                 end
-                if (stripeEnd == descriptor.m) begin
+                if (
+                    stripe.rowBegin + stripe.rowCount
+                    == descriptor.m
+                ) begin
                     dynamicAssert(
                         !isValid(stripeLookahead),
                         "final stripe cannot have lookahead"
