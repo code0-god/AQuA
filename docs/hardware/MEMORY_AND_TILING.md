@@ -1,28 +1,28 @@
-# AQuA Memory and Tiling Architecture
+# AQuA 메모리 및 타일링 아키텍처
 
-## Logical matrices
+## 논리 행렬
 
 ```text
-Activation:          A[M, K]
-GGUF weight source:  W_source[J, K]
-Matrix-engine view:  W[K, J]
-Output:              C[M, J]
+활성값:              A[M, K]
+GGUF 가중치 원본:    W_source[J, K]
+행렬 엔진 관점:      W[K, J]
+출력:                C[M, J]
 ```
 
-Rust uses `n` for output columns. BSV descriptors use the same logical
-dimension even where diagrams call it J.
+Rust는 출력 열에 `n`을 사용한다. BSV 디스크립터는 다이어그램에서 J로
+표기한 경우에도 동일한 논리 차원을 사용한다.
 
-## Five distinct units
+## 서로 다른 다섯 단위
 
-### Physical array dimension
+### 물리 배열 차원
 
-`array_dim` is the physical row and column count. One ordinary array
-execution handles at most `array_dim` K elements and `array_dim` output
-columns.
+`array_dim`은 물리적 행 및 열 개수이다. 한 번의 일반적인 배열
+실행은 최대 `array_dim`개의 K 원소와 `array_dim`개의 출력
+열을 처리한다.
 
-### Macro tile
+### 매크로 타일
 
-Host-selected factors count `array_dim`-wide matrices:
+호스트가 선택한 계수는 `array_dim` 너비의 행렬 개수를 나타낸다.
 
 ```text
 macro_m_rows     = tile_i_factor * array_dim
@@ -30,33 +30,33 @@ macro_n_columns  = tile_j_factor * array_dim
 macro_k_elements = tile_k_factor * array_dim
 ```
 
-Logical matrix edges may produce partial extents.
+논리 행렬의 가장자리에서는 부분 범위가 생길 수 있다.
 
-### ExSIA stripe
+### ExSIA 스트라이프
 
 ```text
 stripe_rows = min(macro_m_rows, remaining logical M)
 ```
 
-An ExSIA stripe is execution context, not ExSIA configuration. The current
-canonical Rust ExSIA reference processes every logical K element in a stripe.
-ExSIA capacity therefore uses full logical K, not macro K.
+ExSIA 스트라이프는 실행 컨텍스트이지 ExSIA 구성이 아니다. 현재의
+표준 Rust ExSIA 참조 구현은 스트라이프의 모든 논리 K 원소를 처리한다.
+따라서 ExSIA 용량에는 매크로 K가 아니라 전체 논리 K를 사용한다.
 
-### Array work
+### 배열 작업
 
-One array work item is bounded by physical dimensions:
+하나의 배열 작업 항목은 물리 차원으로 제한된다.
 
 ```text
 work_i_rows    <= array_dim
 work_j_columns <= array_dim
 ```
 
-A macro M/J tile contains one or more array works.
+매크로 M/J 타일은 하나 이상의 배열 작업을 포함한다.
 
-### K fragment and HP1 block
+### K 프래그먼트 및 HP1 블록
 
-An HP1 block owns 32 K elements. A physical K fragment must not cross that
-boundary:
+HP1 블록 하나는 32개의 K 원소를 소유한다. 물리적 K 프래그먼트는 해당
+경계를 넘어서는 안 된다.
 
 ```text
 remaining_logical_k = work_k_end - k_start
@@ -66,183 +66,211 @@ k_fragment_count =
     min(array_dim, remaining_logical_k, remaining_in_block)
 ```
 
-`macro_k_elements` may exceed 32. `WorkScheduler` decomposes it into
-block-bounded fragments.
+Rust 타일 계획의 `macro_k_elements`는 32를 초과할 수 있다. 그러나 현재
+BSV에는 매크로 K 식별자나 순회 상태가 없다. `MatmulScheduler`가 만든
+`ArrayWork`는 전체 논리 K 범위를 전달하고, `WorkScheduler`는 그 범위를
+블록 경계로 제한된 프래그먼트로 분해한다.
 
-## Hierarchy
+## 계층 구조
 
 ```text
-macro M tile
-└── ExSIA stripe
+매크로 M 타일
+└── ExSIA 스트라이프
 
-macro N/J tile
-└── one or more array_dim-wide array works
+매크로 N/J 타일
+└── 하나 이상의 array_dim 너비 배열 작업
 
-macro K tile
-└── one or more HP1 blocks
-    └── one or more array-dimension-bounded K fragments
+현재 BSV의 전체 논리 K 범위
+└── 하나 이상의 HP1 블록
+    └── 하나 이상의 배열 차원 제한 K 프래그먼트
 ```
 
-## Resource-aware host plan
+Rust는 계속 매크로 K 후보를 선택하고 용량을 계산한다. 이를 실제 BSV
+순회 계약으로 연결하는 작업은 `AquaLoopMatmul` 구현과 함께 연기되어 있다.
 
-`AquaHardwareGeometry` describes:
+## 리소스 인식 호스트 계획
 
-- physical array dimension;
-- activation and weight scratchpad banks and rows;
-- dedicated HP1 metadata capacity in bytes;
-- accumulator banks and rows;
-- ExSIA slot count and bytes;
-- activation, weight, and accumulator element widths;
-- HP1 block-shift and row-scale widths;
-- independent double-buffer enablement.
+`AquaHardwareGeometry`는 다음을 기술한다.
 
-`AquaTileSelector` keeps Gemmini's J, then I, then K greedy growth order but
-tests every candidate against all AQuA resources.
+- 물리 배열 차원;
+- 서로 독립적인 활성값 및 가중치 스크래치패드 뱅크와 행;
+- 바이트 단위의 전용 HP1 메타데이터 용량;
+- 누산기 뱅크와 행;
+- ExSIA 슬롯 개수와 바이트;
+- 활성값, 가중치 및 누산기 원소 너비;
+- HP1 블록 시프트 및 행 스케일 너비;
+- 독립적인 이중 버퍼 활성화 여부.
 
-The explicit HP1 metadata capacity is required because `Hp1MetaMem` is
-physically separate from `WeightSpad`; metadata cannot consume an unspecified
-remainder of weight-code storage.
+`AquaTileSelector`는 Gemmini의 J, I, K 순서 탐욕적 확장 방식을 유지하되
+모든 후보를 모든 AQuA 리소스에 대해 검사한다.
 
-`AquaTilePlan` retains selected factors, concrete logical extents, padded K,
-and resource usage. Its stripe rows generate an existing validated
-`ActivationExecutionPlan`. `FixedStripePlanner` remains separate
-integration/test policy.
+명시적인 HP1 메타데이터 용량이 필요한 이유는 `Hp1MetaMem`이
+`WeightSpad`와 물리적으로 분리되어 있기 때문이다. 메타데이터는
+가중치 코드 저장소의 명시되지 않은 잔여 공간을 사용할 수 없다.
 
-The selected stripe plan is frozen before canonical ExSIA execution. Hardware
-geometry therefore chooses an explicit numerical execution context; it does
-not mutate ExSIA grouping internally. Re-running a shape with different
-geometry may select a different valid plan and therefore different canonical
-stripe results. Re-running the same geometry and shape must select the same
-plan.
+`Hp1MetaMem`의 한 block-scale row는 J 열마다
+`Hp1BlockScale#(shift_width)` 하나를 갖는 `array_dim` lane 벡터다.
+각 lane은 `ZeroBlock` 또는 `LeftShift`를 보존한다. 한 row-shift row도
+J 열마다 `UInt#(shift_width)` 하나를 갖는 벡터다. 부분 J 응답의 마스크는
+요청한 열만 갱신하고 비활성 lane을 보존한다. Rust의 바이트 단위
+메타데이터 용량은 아직 BSV의 `metaEntries`와 자동으로 연결되지 않는다.
 
-## Memory lifetime
+BSV 최상위 매개변수는 다음 기하를 서로 독립적으로 전달한다.
 
-| Memory | Meaning | Lifetime |
+```text
+activationBanks / activationRows
+weightBanks     / weightRows
+accumulatorBanks / accumulatorRows
+metaEntries
+```
+
+따라서 활성값과 가중치가 같은 뱅크 수나 깊이를 가져야 한다는 계약도,
+누산기 뱅크 수가 배열 차원과 같아야 한다는 계약도 없다. 각 컨트롤러는
+자신이 사용하는 메모리 기하에 대해서만 주소를 검증한다.
+
+`AquaTilePlan`은 선택된 계수, 구체적인 논리 범위, 패딩된 K,
+그리고 리소스 사용량을 유지한다. 해당 스트라이프 행은 기존의 검증된
+`ActivationExecutionPlan`을 생성한다. `FixedStripePlanner`는 별도의
+통합/테스트 정책으로 유지된다.
+
+선택된 스트라이프 계획은 표준 ExSIA 실행 전에 고정된다. 따라서 하드웨어
+기하 구조는 명시적인 수치 실행 컨텍스트를 선택하며, ExSIA 그룹화를
+내부적으로 변경하지 않는다. 서로 다른 기하 구조로 형상을 다시 실행하면
+서로 다른 유효 계획이 선택되어 표준 스트라이프 결과도 달라질 수 있다.
+동일한 기하 구조와 형상으로 다시 실행하면 반드시 동일한 계획이 선택되어야
+한다.
+
+## 메모리 수명
+
+| 메모리 | 의미 | 수명 |
 |---|---|---|
-| `ExsiaStripeMem` | Wide values, exponents, outlier masks | Until stripe folding commits |
-| `ActivationSpad` | Clipped activation Q values | Across all J tiles for the stripe |
-| `WeightSpad` | Current or next HP1 code tile/fragment | Matching J/K work |
-| `Hp1MetaMem` | Block left shifts and row-scale metadata | Matching J/K tile |
-| `AccumulatorMem` | Future dense and RaCo contributions | Until output tile completes |
+| `Scratchpad` 활성값 인스턴스 | 클리핑된 활성값 Q 값 | 현재 예약된 로드/실행 범위 |
+| `Scratchpad` 가중치 인스턴스 | HP1 코드 행 | 현재 예약된 J/K 프래그먼트 |
+| `Hp1MetaMem` | 블록 왼쪽 시프트 및 행 스케일 메타데이터 | 해당 J/K 타일 동안 |
+| `AccumulatorMem` | 향후 조밀 및 RaCo 기여값 | 출력 타일이 완료될 때까지 |
 
-Residual packet memory is not included in the first ExSIA slot budget.
+`ExsiaStripeMem`과 잔차 패킷 메모리는 아직 프로덕션 BSV 트리에 없다.
+Rust의 ExSIA 용량 계산은 유지되지만 BSV 로컬 슬롯 계약을 의미하지 않는다.
 
-## Local memory regions
+## 로컬 메모리 영역
 
-`AquaLoopMatmul` is the sole future allocator of local-memory slots and base
-ranges. Schedulers carry those allocations but do not create them. Load and
-store controllers derive offsets inside assigned ranges.
-
-Controllers exchange typed addresses:
+현재 컨트롤러는 상위 계층에서 받은 타입 지정 base/destination 주소에서
+오프셋을 산출한다.
 
 ```text
 AquaLocalAddr {
     region,
-    slot,
     bank,
     row
 }
 ```
 
-Activation, weight, HP1 metadata, accumulator, ExSIA stripe, and future RaCo
-regions remain logically distinct. Banked activation and weight memories use:
+활성값, 가중치, HP1 메타데이터, 누산기, ExSIA 스트라이프 및 향후 RaCo
+영역은 논리적으로 구분된 상태로 유지된다. 뱅크형 활성값 및 가중치 메모리는
+다음을 사용한다.
 
 ```text
 bank     = global_row % bank_count
 bank_row = global_row / bank_count
 ```
 
-Within an allocated slot, canonical row numbering is:
+`LoadController`는 activation row와 weight J row의 순서를 각각 전달받은
+base 주소에 더하고, 각 메모리의 독립적인 bank count로 선형 주소를
+`bank,row`에 매핑한다. HP1 메타데이터와 누산기는 별도 region과 destination을
+사용한다. 프로바이더는 로컬 목적지를 선택하거나 다시 작성하지 않는다.
 
-```text
-activation_global_row =
-    activation_base
-    + local_m * macro_k_groups
-    + local_k_group
+현재 주소에는 슬롯이 없고 이중 버퍼 residency를 주장하지 않는다. 실제로
+두 컨텍스트가 동시에 서로 다른 로컬 범위를 점유하고, 할당 충돌과 승격을
+검증하는 `AquaLoopMatmul`이 구현될 때만 슬롯 식별자를 다시 도입한다.
 
-weight_global_row =
-    weight_base
-    + local_j * macro_k_groups
-    + local_k_group
-```
+## 스크래치패드 동작
 
-`macro_k_groups = ceil(macro_k_elements / array_dim)`. HP1 metadata and
-accumulator allocations use separate bases and cannot alias activation or
-weight ranges. Slot partition bounds are validated when a macro tile is
-installed. Provider requests carry an already allocated local destination;
-the provider never chooses or rewrites it.
+표준 인터페이스는 다음을 명시한다.
 
-Double-buffer slot remains explicit in addresses even before overlap
-execution is implemented.
+- 읽기 요청 수락 후 정의된 지연 시간에 응답;
+- 소비될 때까지 유지되는 하나의 버퍼링된 응답;
+- 백프레셔;
+- 단일 포트에서 읽기 수락보다 높은 쓰기 우선순위;
+- 선택되지 않은 레인을 보존하는 레인 마스킹 쓰기;
+- 시뮬레이션 경계 검사.
 
-## Scratchpad behavior
+첫 번째 물리 백엔드는 BSC가 지원하는 레지스터 또는 BRAM 저장소를 사용할
+수 있다. 인터페이스는 교체 가능한 상태로 유지된다.
 
-The canonical interface specifies:
+## 누산기 동작
 
-- accepted read request followed by defined-latency response;
-- one buffered response held until consumption;
-- backpressure;
-- single-port write priority over read acceptance;
-- lane-masked writes preserving unselected lanes;
-- simulation bounds checks.
-
-The first physical backend may use BSC-supported register or BRAM storage.
-The interface remains replaceable.
-
-## Accumulator behavior
-
-Accumulator banks map output-column lanes. Rows map local output rows.
+누산기 뱅크는 출력 열 레인에 매핑된다. 행은 로컬 출력 행에 매핑된다.
 
 ```text
 accumulate = False: new_value = contribution
 accumulate = True:  new_value = old_value + contribution
 ```
 
-Arithmetic uses parameterized accumulator types. There is no silent
-narrowing, saturation, dense/RaCo arbitration, or row-right-shift unit in
-this foundation.
+산술은 매개변수화된 누산기 타입을 사용한다. 이 기반에는 암묵적인
+너비 축소, 포화, 조밀/RaCo 중재 또는 행 오른쪽 시프트 유닛이 없다.
 
-## Provider boundary
+## 프로바이더 경계
 
 ```text
 LoadController
-    requests canonical activation, weight, and HP1 metadata
-        ↓
-AquaMemoryPort
-    simulator provider now
-    physical DMA adapter later
-        ↓
-banked local memories
+    활성 작업, 재사용 key, 채널별 offered/pending 상태
+        ├── activation ReadPort
+        ├── weight ReadPort
+        ├── block-scale ReadPort
+        └── row-shift ReadPort
+                    ↓
+        현재는 시뮬레이터 프로바이더
+        향후에는 물리 DMA 어댑터
+                    ↓
+LoadStager
+    태그, 영역, 범위, 마스크 검증 후 로컬 메모리 쓰기
 ```
 
-Provider requests identify job, stripe, macro tile, array work, K fragment,
-memory kind, tensor ID, logical range, and local destination. Responses may
-be same-cycle or delayed; tags determine destinations.
+네 read port는 포트와 응답 payload 타입으로 채널을 구분한다.
+`AquaMemoryKind` 또는 공용 destination 판별자는 없다. 공통
+`AquaMemoryTag`는 job, stripe, array-work, fragment, transaction 및
+로컬 주소를 보존한다.
 
-Weight source order remains `[J lane][K fragment]`. A future PE preload
-adapter performs tile-local `[K fragment][J lane]` reorder. The full model is
-never transposed.
+각 채널은 동시에 하나의 요청만 outstanding일 수 있지만 서로 독립적으로
+진행한다. 요청이 `offered`인 동안에는 응답을 받지 않으며, 프로바이더가
+요청을 소비한 뒤 `pending`이 된 다음 사이클부터 정확한 태그의 응답을
+받는다. 따라서 latency-0 동일 사이클 응답은 계약이 아니다.
 
-`StoreController` reads raw accumulator rows and emits tagged output writes.
-Completion requires output acknowledgement. Row-right-shift arithmetic
-remains a later stage.
+block-scale과 row-shift 응답은 각각 J 열별 payload 벡터와 마스크를
+전달한다. 마스크는 정확히 `jCount`개의 선행 lane과 일치해야 하며,
+`LoadStager`는 검증을 통과한 활성 lane만 `Hp1MetaMem`에 쓴다.
 
-## Deferred overlap
+가중치 원본 순서는 `[J lane][K fragment]`로 유지된다. 향후 PE 프리로드
+어댑터가 타일 로컬 `[K fragment][J lane]` 재정렬을 수행한다. 전체 모델은
+절대 전치되지 않는다.
 
-Gemmini's two loop contexts motivate a future `AquaLoopMatmul`:
+`StoreController`는 원시 누산기 행을 읽고 태그가 지정된 출력 쓰기를
+내보낸다. 완료하려면 출력 승인이 필요하다. 행 오른쪽 시프트 산술은 향후
+단계로 남는다.
+
+## 연기된 매크로 K 및 중첩 실행
+
+Gemmini의 루프 컨텍스트는 향후 `AquaLoopMatmul`의 필요성을 제시한다.
 
 ```text
-current context: execute and store
-next context:    load and prepare
+현재 컨텍스트: 실행 및 저장
+다음 컨텍스트: 로드 및 준비
 ```
 
-This foundation preserves slots and controller boundaries but does not
-implement concurrent double-buffer execution.
+현재 기반은 로드, 스케줄, 저장 컨트롤러를 분리하지만 슬롯, 컨텍스트
+승격, 동시 이중 버퍼 실행 또는 매크로 K 순회를 표현하지 않는다. 다음
+조건이 모두 구현될 때 해당 계약을 다시 도입한다.
 
-Traversal layers remain separate:
+- 두 로컬 residency가 실제로 동시에 존재한다.
+- 할당 충돌, 완료 기반 승격, backpressure가 검증된다.
+- `AquaLoopMatmul`이 매크로 K 범위를 생성한다.
+- `ArrayWork.kTileStart/kTileCount`가 그 실제 범위를 전달한다.
+
+순회 계층은 서로 분리된 상태로 유지된다.
 
 ```text
-AquaLoopMatmul: macro M/N/K tile traversal and slot allocation
-MatmulScheduler: array work J-before-I inside one macro M/N tile
-WorkScheduler: block-bounded fragments inside one macro K range
+Rust AquaTileSelector: 매크로 M/N/K 후보 선택과 용량 검사
+MatmulScheduler: 스트라이프와 매크로 N 내부의 J 우선 I 배열 작업
+WorkScheduler: 현재 전체 논리 K 범위의 블록 경계 제한 프래그먼트
+향후 AquaLoopMatmul: 매크로 K 순회, 슬롯 할당, 컨텍스트 승격
 ```
