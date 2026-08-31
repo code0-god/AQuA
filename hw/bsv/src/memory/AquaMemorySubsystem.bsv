@@ -81,28 +81,28 @@ interface AquaMemorySubsystemIfc#(
         ) response
     );
     method Action putBlockShiftResponse(
-        AquaMemoryReadResponse#(Hp1BlockScale#(shiftWidth)) response
+        BlockShiftMemoryResponse#(arrayDim, shiftWidth) response
     );
     method Bool blockShiftResponseReady(
-        AquaMemoryReadResponse#(Hp1BlockScale#(shiftWidth)) response
+        BlockShiftMemoryResponse#(arrayDim, shiftWidth) response
     );
     method Bool queuedBlockShiftResponseReady(
-        AquaMemoryReadResponse#(Hp1BlockScale#(shiftWidth)) response
+        BlockShiftMemoryResponse#(arrayDim, shiftWidth) response
     );
     method Action putQueuedBlockShiftResponse(
-        AquaMemoryReadResponse#(Hp1BlockScale#(shiftWidth)) response
+        BlockShiftMemoryResponse#(arrayDim, shiftWidth) response
     );
     method Action putRowScaleResponse(
-        AquaMemoryReadResponse#(UInt#(shiftWidth)) response
+        RowScaleMemoryResponse#(arrayDim, shiftWidth) response
     );
     method Bool rowScaleResponseReady(
-        AquaMemoryReadResponse#(UInt#(shiftWidth)) response
+        RowScaleMemoryResponse#(arrayDim, shiftWidth) response
     );
     method Bool queuedRowScaleResponseReady(
-        AquaMemoryReadResponse#(UInt#(shiftWidth)) response
+        RowScaleMemoryResponse#(arrayDim, shiftWidth) response
     );
     method Action putQueuedRowScaleResponse(
-        AquaMemoryReadResponse#(UInt#(shiftWidth)) response
+        RowScaleMemoryResponse#(arrayDim, shiftWidth) response
     );
 
     method Bool loadCompletionValid;
@@ -136,7 +136,7 @@ interface AquaMemorySubsystemIfc#(
             Bit#(weightWidth)
         )
     ) weightBanks;
-    interface Hp1MetaMemIfc#(metaEntries, shiftWidth) hp1Meta;
+    interface Hp1MetaMemIfc#(metaEntries, arrayDim, shiftWidth) hp1Meta;
     interface AccumulatorMemIfc#(arrayDim, accRows, accWidth) accumulator;
 endinterface
 
@@ -170,7 +170,7 @@ module mkAquaMemorySubsystem(
         activationWidth,
         weightWidth
     ) scratchpads <- mkScratchpadResponseStager(load);
-    MetadataResponseStagerIfc#(metaEntries, shiftWidth) metadata
+    MetadataResponseStagerIfc#(arrayDim, metaEntries, shiftWidth) metadata
         <- mkMetadataResponseStager(load);
     AccumulatorMemIfc#(arrayDim, accRows, accWidth) accumulators
         <- mkAccumulatorMem;
@@ -258,38 +258,38 @@ module mkAquaMemorySubsystem(
         scratchpads.putQueuedWeightResponse(response);
     endmethod
     method Bool blockShiftResponseReady(
-        BlockShiftMemoryResponse#(shiftWidth) response
+        BlockShiftMemoryResponse#(arrayDim, shiftWidth) response
     ) =
         metadata.blockShiftResponseReady(response);
     method Action putBlockShiftResponse(
-        BlockShiftMemoryResponse#(shiftWidth) response
+        BlockShiftMemoryResponse#(arrayDim, shiftWidth) response
     );
         metadata.putBlockShiftResponse(response);
     endmethod
     method Bool queuedBlockShiftResponseReady(
-        BlockShiftMemoryResponse#(shiftWidth) response
+        BlockShiftMemoryResponse#(arrayDim, shiftWidth) response
     ) =
         metadata.queuedBlockShiftResponseReady(response);
     method Action putQueuedBlockShiftResponse(
-        BlockShiftMemoryResponse#(shiftWidth) response
+        BlockShiftMemoryResponse#(arrayDim, shiftWidth) response
     );
         metadata.putQueuedBlockShiftResponse(response);
     endmethod
     method Bool rowScaleResponseReady(
-        RowScaleMemoryResponse#(shiftWidth) response
+        RowScaleMemoryResponse#(arrayDim, shiftWidth) response
     ) =
         metadata.rowScaleResponseReady(response);
     method Action putRowScaleResponse(
-        RowScaleMemoryResponse#(shiftWidth) response
+        RowScaleMemoryResponse#(arrayDim, shiftWidth) response
     );
         metadata.putRowScaleResponse(response);
     endmethod
     method Bool queuedRowScaleResponseReady(
-        RowScaleMemoryResponse#(shiftWidth) response
+        RowScaleMemoryResponse#(arrayDim, shiftWidth) response
     ) =
         metadata.queuedRowScaleResponseReady(response);
     method Action putQueuedRowScaleResponse(
-        RowScaleMemoryResponse#(shiftWidth) response
+        RowScaleMemoryResponse#(arrayDim, shiftWidth) response
     );
         metadata.putQueuedRowScaleResponse(response);
     endmethod

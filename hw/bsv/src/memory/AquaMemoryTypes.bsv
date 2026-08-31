@@ -63,13 +63,35 @@ typedef AquaMemoryReadResponse#(
     numeric type elementWidth
 );
 
-typedef AquaMemoryReadResponse#(
+typedef ScratchpadRowPayload#(
+    arrayDim,
     Hp1BlockScale#(shiftWidth)
-) BlockShiftMemoryResponse#(numeric type shiftWidth);
+) Hp1BlockScaleRow#(
+    numeric type arrayDim,
+    numeric type shiftWidth
+);
+
+typedef ScratchpadRowPayload#(
+    arrayDim,
+    UInt#(shiftWidth)
+) Hp1RowShiftRow#(
+    numeric type arrayDim,
+    numeric type shiftWidth
+);
 
 typedef AquaMemoryReadResponse#(
-    UInt#(shiftWidth)
-) RowScaleMemoryResponse#(numeric type shiftWidth);
+    Hp1BlockScaleRow#(arrayDim, shiftWidth)
+) BlockShiftMemoryResponse#(
+    numeric type arrayDim,
+    numeric type shiftWidth
+);
+
+typedef AquaMemoryReadResponse#(
+    Hp1RowShiftRow#(arrayDim, shiftWidth)
+) RowScaleMemoryResponse#(
+    numeric type arrayDim,
+    numeric type shiftWidth
+);
 
 typedef struct {
     MatmulJobId jobId;

@@ -45,7 +45,8 @@ BSV_EXPECT_FAIL_TOPS := \
 	mkTbAccumulatorOverflow \
 	mkTbMatmulStripeGap \
 	mkTbMatmulStripeOverlap \
-	mkTbMatmulStripeOutOfBounds
+	mkTbMatmulStripeOutOfBounds \
+	mkTbMetadataResponseMaskMismatch
 
 SYNTH_TOPS := \
 	mkMemorySynthTop \
@@ -89,6 +90,7 @@ bsv-test: | $(BUILD_DIR)/bsc $(BUILD_DIR)/sim $(BUILD_DIR)/info $(BUILD_DIR)/bin
 	    mkTbMatmulStripeGap) expected='stripe publication gap' ;; \
 	    mkTbMatmulStripeOverlap) expected='stripe publication overlap' ;; \
 	    mkTbMatmulStripeOutOfBounds) expected='stripe publication out of bounds' ;; \
+	    mkTbMetadataResponseMaskMismatch) expected='metadata response mask does not match requested J count' ;; \
 	    *) echo "missing expected failure text for $$top" >&2; exit 2 ;; \
 	  esac; \
 	  output="$$("$(BUILD_DIR)/bin/$$package" 2>&1)"; \

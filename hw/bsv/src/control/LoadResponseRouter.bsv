@@ -6,6 +6,7 @@ import AquaTypes::*;
 import LoadChannel::*;
 import LoadMetadataRouter::*;
 import LoadRequestBuilder::*;
+import Vector::*;
 
 interface LoadResponseRouterIfc#(
     numeric type arrayDim,
@@ -56,7 +57,20 @@ interface LoadResponseRouterIfc#(
     method Action completeRowScale(AquaMemoryTag tag);
     method Bool queuedRowScaleResponseReady(AquaMemoryTag tag);
     method Action completeQueuedRowScale(AquaMemoryTag tag);
+
+    method Bool metadataResponseMaskValid(Vector#(arrayDim, Bool) mask);
 endinterface
+
+function Bool metadataMaskMatches(
+    Vector#(arrayDim, Bool) mask,
+    ArrayCount jCount
+);
+    Bool valid = True;
+    for (Integer lane = 0; lane < valueOf(arrayDim); lane = lane + 1) begin
+        valid = valid && mask[lane] == (fromInteger(lane) < jCount);
+    end
+    return valid;
+endfunction
 
 module mkLoadResponseRouter(
     LoadResponseRouterIfc#(arrayDim, bankCount)
@@ -288,6 +302,11 @@ module mkLoadResponseRouter(
         metadata.queuedRowScaleResponseReady(tag);
     method Action completeQueuedRowScale(AquaMemoryTag tag);
         metadata.completeQueuedRowScale(tag);
+    endmethod
+
+    method Bool metadataResponseMaskValid(Vector#(arrayDim, Bool) mask);
+        return isValid(active)
+            && metadataMaskMatches(mask, fromMaybe(?, active).jCount);
     endmethod
 endmodule
 

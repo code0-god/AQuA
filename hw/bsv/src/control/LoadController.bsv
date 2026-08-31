@@ -10,6 +10,7 @@ import LoadChannel::*;
 import LoadRequestBuilder::*;
 import LoadResponseRouter::*;
 import SpecialFIFOs::*;
+import Vector::*;
 
 interface LoadControllerIfc#(
     numeric type arrayDim,
@@ -40,6 +41,8 @@ interface LoadControllerIfc#(
     method Action completeRowScale(AquaMemoryTag tag);
     method Bool queuedRowScaleResponseReady(AquaMemoryTag tag);
     method Action completeQueuedRowScale(AquaMemoryTag tag);
+
+    method Bool metadataResponseMaskValid(Vector#(arrayDim, Bool) mask);
 
     method Bool completionValid;
     method LoadCompletion completion;
@@ -333,6 +336,9 @@ module mkLoadController(LoadControllerIfc#(
         dynamicAssert(valid, "queued row scale response mismatch");
         if (valid) router.completeQueuedRowScale(tag);
     endmethod
+
+    method Bool metadataResponseMaskValid(Vector#(arrayDim, Bool) mask) =
+        router.metadataResponseMaskValid(mask);
 
     method Bool completionValid = completions.notEmpty;
     method LoadCompletion completion if (completions.notEmpty);

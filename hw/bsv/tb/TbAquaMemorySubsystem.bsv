@@ -16,8 +16,8 @@ typedef ScratchpadRowPayload#(16, Int#(8)) ActivationPayload;
 typedef ScratchpadRowPayload#(16, Bit#(8)) WeightPayload;
 typedef AquaMemoryReadResponse#(ActivationPayload) ActivationResponse;
 typedef AquaMemoryReadResponse#(WeightPayload) WeightResponse;
-typedef AquaMemoryReadResponse#(Hp1BlockScale#(6)) BlockResponse;
-typedef AquaMemoryReadResponse#(UInt#(6)) RowResponse;
+typedef BlockShiftMemoryResponse#(16, 6) BlockResponse;
+typedef RowScaleMemoryResponse#(16, 6) RowResponse;
 
 function AquaLocalAddr localAddress(
     AquaLocalRegion region,
@@ -172,12 +172,15 @@ module mkTbAquaMemorySubsystem(Empty);
         && !blockPipe.responseValid
     );
         let request = dut.blockShiftRequest;
+        Vector#(16, Bool) mask = replicate(False);
+        mask[0] = True;
+        mask[1] = True;
+        Vector#(16, Hp1BlockScale#(6)) data = replicate(?);
+        data[0] = Hp1BlockScale { zeroBlock: False, leftShift: 3 };
+        data[1] = Hp1BlockScale { zeroBlock: True, leftShift: 0 };
         blockPipe.accept(AquaMemoryReadResponse {
             tag: request.tag,
-            payload: Hp1BlockScale {
-                zeroBlock: False,
-                leftShift: 3
-            }
+            payload: ScratchpadRowPayload { mask: mask, data: data }
         });
         dut.consumeBlockShiftRequest;
         blockRequestsSeen <= blockRequestsSeen + 1;
@@ -187,9 +190,15 @@ module mkTbAquaMemorySubsystem(Empty);
         dut.rowScaleRequestValid
     );
         let request = dut.rowScaleRequest;
+        Vector#(16, Bool) mask = replicate(False);
+        mask[0] = True;
+        mask[1] = True;
+        Vector#(16, UInt#(6)) data = replicate(?);
+        data[0] = 5;
+        data[1] = 11;
         RowResponse response = AquaMemoryReadResponse {
             tag: request.tag,
-            payload: 5
+            payload: ScratchpadRowPayload { mask: mask, data: data }
         };
         dynamicAssert(dut.queuedRowScaleResponseReady(response),
                       "same-cycle row response not ready");
@@ -242,11 +251,16 @@ module mkTbAquaMemorySubsystem(Empty);
     endrule
 
     rule captureLoadCompletion(dut.loadCompletionValid);
-        let block = dut.hp1Meta.readBlockScale(7);
-        let row = dut.hp1Meta.readRowShift(8);
-        dynamicAssert(!block.zeroBlock && block.leftShift == 3,
-                      "block metadata was not staged");
-        dynamicAssert(row == 5, "row metadata was not staged");
+        let blocks = dut.hp1Meta.readBlockScales(7);
+        let rows = dut.hp1Meta.readRowShifts(8);
+        dynamicAssert(!blocks[0].zeroBlock && blocks[0].leftShift == 3,
+                      "block metadata lane zero was not staged");
+        dynamicAssert(blocks[1].zeroBlock,
+                      "block metadata lane one was not staged");
+        dynamicAssert(rows[0] == 5,
+                      "row metadata lane zero was not staged");
+        dynamicAssert(rows[1] == 11,
+                      "row metadata lane one was not staged");
         dut.consumeLoadCompletion;
         loadDone <= True;
     endrule
