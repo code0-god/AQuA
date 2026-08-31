@@ -22,7 +22,6 @@ function AquaMatmulDescriptor descriptor(
         k: k,
         stripeRows: stripeRows,
         macroNTileColumns: n,
-        macroKTileElements: k,
         activationTensor: 1,
         weightTensor: 2,
         outputTensor: 3,
@@ -39,9 +38,8 @@ function ActivationStripe stripe(
         stripeId: stripeId,
         rowBegin: rowBegin,
         rowCount: rowCount,
-        activationBase: DefaultAquaLocalAddr {
+        activationBase: AquaLocalAddr {
             region: LocalActivation,
-            slot: truncate(pack(stripeId)),
             bank: 0,
             row: 0
         },

@@ -19,13 +19,12 @@ typedef AquaMemoryReadResponse#(WeightPayload) WeightResponse;
 typedef AquaMemoryReadResponse#(Hp1BlockScale#(6)) BlockResponse;
 typedef AquaMemoryReadResponse#(UInt#(6)) RowResponse;
 
-function DefaultAquaLocalAddr localAddress(
+function AquaLocalAddr localAddress(
     AquaLocalRegion region,
     Bit#(16) row
 );
-    return DefaultAquaLocalAddr {
+    return AquaLocalAddr {
         region: region,
-        slot: 1,
         bank: 0,
         row: row
     };
@@ -35,7 +34,6 @@ function ProviderLoadWork#(16) integrationLoad;
     return ProviderLoadWork {
         jobId: 14,
         stripeId: 2,
-        macroTileId: 4,
         arrayWorkId: 8,
         fragmentId: 16,
         activationTensor: 1001,
@@ -58,7 +56,6 @@ function StoreWork#(16) integrationStore;
     return StoreWork {
         jobId: 14,
         stripeId: 2,
-        macroTileId: 4,
         arrayWorkId: 8,
         outputTensor: 1003,
         iStart: 4,

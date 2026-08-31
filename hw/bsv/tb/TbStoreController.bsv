@@ -9,16 +9,14 @@ import AquaWorkTypes::*;
 import StoreController::*;
 
 function StoreWork#(16) storeWork;
-    DefaultAquaLocalAddr accumulatorBase = DefaultAquaLocalAddr {
+    AquaLocalAddr accumulatorBase = AquaLocalAddr {
         region: LocalAccumulator,
-        slot: 0,
         bank: 0,
         row: 0
     };
     return StoreWork {
         jobId: 9,
         stripeId: 4,
-        macroTileId: 6,
         arrayWorkId: 12,
         outputTensor: 303,
         iStart: 20,
@@ -114,8 +112,6 @@ module mkTbStoreController(Empty);
                       "output request job mismatch");
         dynamicAssert(request.tag.stripeId == 4,
                       "output request stripe mismatch");
-        dynamicAssert(request.tag.macroTileId == 6,
-                      "output request macro tile mismatch");
         dynamicAssert(request.tag.arrayWorkId == 12,
                       "output request array work mismatch");
         dynamicAssert(request.tensorId == 303,

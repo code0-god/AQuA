@@ -8,11 +8,11 @@ import AquaTypes::*;
 import Hp1MetaMem::*;
 
 function UInt#(32) metadataLocalBank(AquaMemoryTag tag);
-    return zeroExtend(unpack(tag.localDestination.bank));
+    return zeroExtend(unpack(tag.localAddress.bank));
 endfunction
 
 function UInt#(32) metadataLocalRow(AquaMemoryTag tag);
-    return zeroExtend(unpack(tag.localDestination.row));
+    return zeroExtend(unpack(tag.localAddress.row));
 endfunction
 
 function Bool validMetadataResponse(
@@ -22,7 +22,7 @@ function Bool validMetadataResponse(
 );
     return
         tag.kind == expectedKind
-        && tag.localDestination.region == LocalHp1Meta
+        && tag.localAddress.region == LocalHp1Meta
         && metadataLocalBank(tag) == 0
         && metadataLocalRow(tag) < fromInteger(entryCount);
 endfunction

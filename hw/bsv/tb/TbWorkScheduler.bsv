@@ -17,8 +17,7 @@ function ArrayWork#(dim) makeWork(
         iCount: 1,
         jCount: 1,
         kTileStart: kStart,
-        kTileCount: kCount,
-        slot: 0
+        kTileCount: kCount
     };
 endfunction
 

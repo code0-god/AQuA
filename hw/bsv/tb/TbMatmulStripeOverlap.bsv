@@ -12,7 +12,7 @@ module mkTbMatmulStripeOverlap(Empty);
     rule start(step == 0 && dut.startReady);
         dut.start(AquaMatmulDescriptor {
             jobId: 1, mode: AsyncStripes, m: 16, n: 16, k: 32,
-            stripeRows: 8, macroNTileColumns: 16, macroKTileElements: 32,
+            stripeRows: 8, macroNTileColumns: 16,
             activationTensor: 1, weightTensor: 2, outputTensor: 3,
             jobContext: 0
         });

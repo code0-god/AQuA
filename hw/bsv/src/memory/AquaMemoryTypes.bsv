@@ -1,5 +1,6 @@
 package AquaMemoryTypes;
 
+import AquaLocalAddr::*;
 import AquaTypes::*;
 import AquaWorkTypes::*;
 import Vector::*;
@@ -20,12 +21,11 @@ typedef struct {
 typedef struct {
     MatmulJobId jobId;
     StripeId stripeId;
-    MacroTileId macroTileId;
     ArrayWorkId arrayWorkId;
     KFragmentId fragmentId;
     AquaMemoryKind kind;
     AquaMemoryTxnId transactionId;
-    DefaultAquaLocalAddr localDestination;
+    AquaLocalAddr localAddress;
 } AquaMemoryTag deriving (Bits, Eq, FShow);
 
 typedef struct {
@@ -74,29 +74,27 @@ typedef AquaMemoryReadResponse#(
 typedef struct {
     MatmulJobId jobId;
     StripeId stripeId;
-    MacroTileId macroTileId;
     ArrayWorkId arrayWorkId;
     KFragmentId fragmentId;
     HostTensorId activationTensor;
     HostTensorId weightTensor;
     MatrixExtent iStart;
-    ArrayExtent#(arrayDim) iCount;
+    ArrayCount iCount;
     MatrixExtent jStart;
-    ArrayExtent#(arrayDim) jCount;
+    ArrayCount jCount;
     MatrixExtent fragmentKStart;
-    MatrixExtent fragmentKCount;
+    ArrayCount fragmentKCount;
     MatrixExtent fragmentBlockIndex;
-    DefaultAquaLocalAddr activationBase;
-    DefaultAquaLocalAddr weightBase;
-    DefaultAquaLocalAddr blockShiftDestination;
-    DefaultAquaLocalAddr rowScaleDestination;
+    AquaLocalAddr activationBase;
+    AquaLocalAddr weightBase;
+    AquaLocalAddr blockShiftDestination;
+    AquaLocalAddr rowScaleDestination;
 } ProviderLoadWork#(numeric type arrayDim)
     deriving (Bits, Eq, FShow);
 
 typedef struct {
     MatmulJobId jobId;
     StripeId stripeId;
-    MacroTileId macroTileId;
     ArrayWorkId arrayWorkId;
     KFragmentId fragmentId;
 } LoadCompletion deriving (Bits, Eq, FShow);
@@ -104,14 +102,13 @@ typedef struct {
 typedef struct {
     MatmulJobId jobId;
     StripeId stripeId;
-    MacroTileId macroTileId;
     ArrayWorkId arrayWorkId;
     HostTensorId outputTensor;
     MatrixExtent iStart;
-    ArrayExtent#(arrayDim) iCount;
+    ArrayCount iCount;
     MatrixExtent jStart;
-    ArrayExtent#(arrayDim) jCount;
-    DefaultAquaLocalAddr accumulatorBase;
+    ArrayCount jCount;
+    AquaLocalAddr accumulatorBase;
 } StoreWork#(numeric type arrayDim)
     deriving (Bits, Eq, FShow);
 
@@ -132,7 +129,6 @@ typedef struct {
 typedef struct {
     MatmulJobId jobId;
     StripeId stripeId;
-    MacroTileId macroTileId;
     ArrayWorkId arrayWorkId;
 } StoreCompletion deriving (Bits, Eq, FShow);
 

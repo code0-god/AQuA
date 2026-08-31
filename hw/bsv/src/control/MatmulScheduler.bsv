@@ -19,10 +19,9 @@ function ActivationStripe makeFullStripe(
         descriptor.m - rowBegin
     );
 
-    // Stripe ID의 하위 bit를 local activation slot으로 사용한다.
-    DefaultAquaLocalAddr base = DefaultAquaLocalAddr {
+    // Local activation memory의 시작 주소를 사용한다.
+    AquaLocalAddr base = AquaLocalAddr {
         region: LocalActivation,
-        slot: truncate(pack(stripeId)),
         bank: 0,
         row: 0
     };
@@ -47,9 +46,6 @@ function ArrayWork#(arrayDim) makeArrayWork(
     MatrixExtent macroNStart,
     MatrixExtent iStart,
     MatrixExtent jStart
-) provisos (
-    // ArrayExtent#(arrayDim)를 32-bit MatrixExtent에서 안전하게 truncate할 수 있게 한다.
-    Add#(arrayPadding, TLog#(TAdd#(arrayDim, 1)), 32)
 );
 
     // 현재 stripe의 마지막 M row 다음 위치.
@@ -76,11 +72,6 @@ function ArrayWork#(arrayDim) makeArrayWork(
         macroNEnd - jStart
     );
 
-    // Activation stripe의 physical slot 번호를 control-level LocalSlotId로 확장한다.
-    LocalSlotId slot = unpack(
-        zeroExtend(stripe.activationBase.slot)
-    );
-
     return ArrayWork {
         jobId: descriptor.jobId,
         stripeId: stripe.stripeId,
@@ -89,15 +80,13 @@ function ArrayWork#(arrayDim) makeArrayWork(
         iStart: iStart,
         jStart: jStart,
 
-        // iCount/jCount는 항상 arrayDim 이하이므로 ArrayExtent로 축소한다.
+        // iCount/jCount는 항상 arrayDim 이하이므로 ArrayCount로 축소한다.
         iCount: truncate(iCount),
         jCount: truncate(jCount),
 
         // AquaLoopMatmul이 아직 없으므로 현재는 logical K 전체를 하나의 range로 사용한다.
         kTileStart: 0,
-        kTileCount: descriptor.k,
-
-        slot: slot
+        kTileCount: descriptor.k
     };
 
 endfunction
@@ -125,10 +114,7 @@ interface MatmulSchedulerIfc#(numeric type arrayDim);
     method Action consumeCompletion;
 endinterface
 
-module mkMatmulScheduler(MatmulSchedulerIfc#(arrayDim))
-    provisos (
-        Add#(arrayPadding, TLog#(TAdd#(arrayDim, 1)), 32)
-    );
+module mkMatmulScheduler(MatmulSchedulerIfc#(arrayDim));
 
     FIFOF#(StripeCompletion) completions <- mkSizedFIFOF(2);
     Reg#(Maybe#(AquaMatmulDescriptor)) activeDescriptor
@@ -165,10 +151,6 @@ module mkMatmulScheduler(MatmulSchedulerIfc#(arrayDim))
         dynamicAssert(
             descriptor.macroNTileColumns > 0,
             "macro N tile must be positive"
-        );
-        dynamicAssert(
-            descriptor.macroKTileElements > 0,
-            "macro K tile must be positive"
         );
 
         activeDescriptor <= tagged Valid descriptor;
@@ -411,12 +393,6 @@ endmodule
 // 이 된다.
 //
 // activationBase는 현재 stripe가 사용할 LocalActivation 영역의 시작 주소다.
-// slot은 stripeId의 하위 bit를 사용하므로 DefaultAquaLocalAddr의 slot width가
-// 2이면 physical slot 값은 0..3 범위에서 반복된다.
-//
-// 이것은 현재 foundation 단계의 단순 slot mapping이며, 향후 AquaLoopMatmul의
-// current/next residency 관리가 구현되면 slot ownership 정책이 확장될 수 있다.
-//
 //
 // makeArrayWork
 // -------------
@@ -453,49 +429,19 @@ endmodule
 // 으로 마지막 partial macro N tile을 만든다.
 //
 //
-// ArrayExtent
-// -----------
+// ArrayCount
+// ----------
 //
 // iCount와 jCount의 실제 계산은 MatrixExtent(UInt#(32))로 수행하지만,
-// ArrayWork 내부에서는:
+// ArrayWork 내부에서는 7-bit ArrayCount로 저장한다.
 //
-//     ArrayExtent#(arrayDim)
-//
-// 로 저장한다.
-//
-// ArrayExtent는 0..arrayDim을 표현하기 위한 최소 width다.
-//
-// 예:
-//
-//     DIM 16 → 5 bits
-//     DIM 32 → 6 bits
-//     DIM 64 → 7 bits
-//
-// provisos의:
-//
-//     Add#(
-//         arrayPadding,
-//         TLog#(TAdd#(arrayDim, 1)),
-//         32
-//     )
-//
-// 는 이 ArrayExtent width가 32-bit MatrixExtent 안에 들어간다는
-// compile-time 관계를 Bluespec type checker에 알려준다.
+// 지원하는 DIM 16/32/64와 0..64 범위를 모두 표현할 수 있다.
 //
 //
 // Current K behavior
 // ------------------
 //
-// AquaMatmulDescriptor에는:
-//
-//     macroKTileElements
-//
-// 가 존재하고 Rust AquaTileSelector도 실제 macro-K 크기를 계산한다.
-//
-// 하지만 현재 BSV에는 전체 macro M/N/K tile 순회를 담당하는
-// AquaLoopMatmul이 아직 구현되지 않았다.
-//
-// 따라서 현재 makeArrayWork()는:
+// 현재 makeArrayWork()는:
 //
 //     kTileStart = 0
 //     kTileCount = descriptor.k

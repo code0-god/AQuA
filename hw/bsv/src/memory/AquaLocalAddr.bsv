@@ -11,14 +11,9 @@ typedef enum {
 
 typedef struct {
     AquaLocalRegion region;
-    Bit#(slotWidth) slot;
-    Bit#(bankWidth) bank;
-    Bit#(rowWidth) row;
-} AquaLocalAddr#(
-    numeric type slotWidth,
-    numeric type bankWidth,
-    numeric type rowWidth
-) deriving (Bits, Eq, FShow);
+    Bit#(8) bank;
+    Bit#(16) row;
+} AquaLocalAddr deriving (Bits, Eq, FShow);
 
 typedef struct {
     Bit#(bankWidth) bank;
@@ -55,13 +50,10 @@ function AquaBankedRow#(bankWidth, rowWidth) mapGlobalRow(
     end
 endfunction
 
-function AquaLocalAddr#(slotWidth, bankWidth, rowWidth) offsetBankedAddress(
-    AquaLocalAddr#(slotWidth, bankWidth, rowWidth) base,
+function AquaLocalAddr offsetBankedAddress(
+    AquaLocalAddr base,
     UInt#(32) offset,
     Integer bankCount
-) provisos (
-    Add#(bankPadding, bankWidth, 40),
-    Add#(rowPadding, rowWidth, 40)
 );
     if (bankCount <= 0) begin
         return error("bank count must be positive");
@@ -78,7 +70,6 @@ function AquaLocalAddr#(slotWidth, bankWidth, rowWidth) offsetBankedAddress(
         // pure address derivation is used.
         return AquaLocalAddr {
             region: base.region,
-            slot: base.slot,
             bank: truncate(pack(bank)),
             row: truncate(pack(row))
         };

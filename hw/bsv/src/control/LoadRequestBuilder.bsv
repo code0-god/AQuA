@@ -7,27 +7,23 @@ import AquaWorkTypes::*;
 
 typedef struct {
     MatmulJobId jobId;
-    MacroTileId macroTileId;
     HostTensorId weightTensor;
     MatrixExtent jStart;
     MatrixExtent jCount;
-    DefaultAquaLocalAddr destination;
+    AquaLocalAddr destination;
 } RowScaleReuseKey deriving (Bits, Eq, FShow);
 
 typedef struct {
     RowScaleReuseKey rowKey;
     MatrixExtent blockIndex;
-    DefaultAquaLocalAddr destination;
+    AquaLocalAddr destination;
 } BlockScaleReuseKey deriving (Bits, Eq, FShow);
 
 function RowScaleReuseKey rowScaleReuseKey(
     ProviderLoadWork#(arrayDim) work
-) provisos (
-    Add#(arrayPadding, TLog#(TAdd#(arrayDim, 1)), 32)
 );
     return RowScaleReuseKey {
         jobId: work.jobId,
-        macroTileId: work.macroTileId,
         weightTensor: work.weightTensor,
         jStart: work.jStart,
         jCount: zeroExtend(work.jCount),
@@ -37,8 +33,6 @@ endfunction
 
 function BlockScaleReuseKey blockScaleReuseKey(
     ProviderLoadWork#(arrayDim) work
-) provisos (
-    Add#(arrayPadding, TLog#(TAdd#(arrayDim, 1)), 32)
 );
     return BlockScaleReuseKey {
         rowKey: rowScaleReuseKey(work),
@@ -69,17 +63,16 @@ function AquaMemoryTag loadTag(
     ProviderLoadWork#(arrayDim) work,
     AquaMemoryKind kind,
     MatrixExtent index,
-    DefaultAquaLocalAddr destination
+    AquaLocalAddr address
 );
     return AquaMemoryTag {
         jobId: work.jobId,
         stripeId: work.stripeId,
-        macroTileId: work.macroTileId,
         arrayWorkId: work.arrayWorkId,
         fragmentId: work.fragmentId,
         kind: kind,
         transactionId: transactionId(kind, index),
-        localDestination: destination
+        localAddress: address
     };
 endfunction
 
@@ -102,7 +95,7 @@ function AquaMemoryReadRequest activationRequest(
         },
         inner: LogicalRange {
             start: work.fragmentKStart,
-            count: work.fragmentKCount
+            count: zeroExtend(work.fragmentKCount)
         }
     };
 endfunction
@@ -127,15 +120,13 @@ function AquaMemoryReadRequest weightRequest(
         },
         inner: LogicalRange {
             start: work.fragmentKStart,
-            count: work.fragmentKCount
+            count: zeroExtend(work.fragmentKCount)
         }
     };
 endfunction
 
 function AquaMemoryReadRequest blockShiftRequest(
     ProviderLoadWork#(arrayDim) work
-) provisos (
-    Add#(arrayPadding, TLog#(TAdd#(arrayDim, 1)), 32)
 );
     return AquaMemoryReadRequest {
         tag: loadTag(
@@ -158,8 +149,6 @@ endfunction
 
 function AquaMemoryReadRequest rowScaleRequest(
     ProviderLoadWork#(arrayDim) work
-) provisos (
-    Add#(arrayPadding, TLog#(TAdd#(arrayDim, 1)), 32)
 );
     return AquaMemoryReadRequest {
         tag: loadTag(
@@ -206,8 +195,6 @@ endfunction
 function Bool matchesBlockShiftResponse(
     ProviderLoadWork#(arrayDim) work,
     AquaMemoryTag tag
-) provisos (
-    Add#(arrayPadding, TLog#(TAdd#(arrayDim, 1)), 32)
 );
     return tag == blockShiftRequest(work).tag;
 endfunction
@@ -215,8 +202,6 @@ endfunction
 function Bool matchesRowScaleResponse(
     ProviderLoadWork#(arrayDim) work,
     AquaMemoryTag tag
-) provisos (
-    Add#(arrayPadding, TLog#(TAdd#(arrayDim, 1)), 32)
 );
     return tag == rowScaleRequest(work).tag;
 endfunction

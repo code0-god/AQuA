@@ -10,16 +10,15 @@ import FIFOF::*;
 import SpecialFIFOs::*;
 import LoadRequestBuilder::*;
 
-function DefaultAquaLocalAddr accumulatorAddress(
+function AquaLocalAddr accumulatorAddress(
     StoreWork#(arrayDim) work,
     MatrixExtent localI,
     MatrixExtent localJ
 );
     UInt#(32) baseBank = zeroExtend(unpack(work.accumulatorBase.bank));
     UInt#(32) baseRow = zeroExtend(unpack(work.accumulatorBase.row));
-    return DefaultAquaLocalAddr {
+    return AquaLocalAddr {
         region: LocalAccumulator,
-        slot: work.accumulatorBase.slot,
         bank: truncate(pack(baseBank + localJ)),
         row: truncate(pack(baseRow + localI))
     };
@@ -28,17 +27,16 @@ endfunction
 function AquaMemoryTag storeTag(
     StoreWork#(arrayDim) work,
     MatrixExtent transaction,
-    DefaultAquaLocalAddr source
+    AquaLocalAddr source
 );
     return AquaMemoryTag {
         jobId: work.jobId,
         stripeId: work.stripeId,
-        macroTileId: work.macroTileId,
         arrayWorkId: work.arrayWorkId,
         fragmentId: 0,
         kind: MemoryRawOutput,
         transactionId: transactionId(MemoryRawOutput, transaction),
-        localDestination: source
+        localAddress: source
     };
 endfunction
 
@@ -47,8 +45,6 @@ function AquaMemoryWriteRequest#(accWidth) outputWriteRequest(
     MatrixExtent localI,
     MatrixExtent localJ,
     Int#(accWidth) rawValue
-) provisos (
-    Add#(arrayPadding, TLog#(TAdd#(arrayDim, 1)), 32)
 );
     MatrixExtent jCount = zeroExtend(work.jCount);
     UInt#(64) transactionWide =
@@ -103,7 +99,6 @@ module mkStoreController#(
     AccumulatorMemIfc#(bankCount, rowCount, accWidth) accumulator
 )(StoreControllerIfc#(arrayDim, bankCount, rowCount, accWidth))
     provisos (
-        Add#(arrayPadding, TLog#(TAdd#(arrayDim, 1)), 32),
         Add#(bankAddrPadding, TLog#(TAdd#(bankCount, 1)), 8),
         Add#(rowAddrPadding, TLog#(TAdd#(rowCount, 1)), 16)
     );
@@ -113,8 +108,8 @@ module mkStoreController#(
     FIFOF#(StoreCompletion) completions <- mkPipelineFIFOF;
     Reg#(StoreState) state <- mkReg(StoreIdle);
     Reg#(Maybe#(StoreWork#(arrayDim))) active <- mkReg(tagged Invalid);
-    Reg#(ArrayExtent#(arrayDim)) localI <- mkReg(0);
-    Reg#(ArrayExtent#(arrayDim)) localJ <- mkReg(0);
+    Reg#(ArrayCount) localI <- mkReg(0);
+    Reg#(ArrayCount) localJ <- mkReg(0);
     Reg#(Maybe#(AquaMemoryTag)) pendingAck <- mkReg(tagged Invalid);
 
     rule issueAccumulatorRead (
@@ -144,9 +139,9 @@ module mkStoreController#(
         MatrixExtent i = zeroExtend(localI);
         MatrixExtent j = zeroExtend(localJ);
         let request = outputWriteRequest(work, i, j, response.value);
-        dynamicAssert(response.bank == truncate(request.tag.localDestination.bank),
+        dynamicAssert(response.bank == truncate(request.tag.localAddress.bank),
                       "accumulator response bank mismatch");
-        dynamicAssert(response.row == truncate(request.tag.localDestination.row),
+        dynamicAssert(response.row == truncate(request.tag.localAddress.row),
                       "accumulator response row mismatch");
         outputRequests.enq(request);
         accumulator.consumeRead;
@@ -254,7 +249,6 @@ module mkStoreController#(
                 completions.enq(StoreCompletion {
                     jobId: work.jobId,
                     stripeId: work.stripeId,
-                    macroTileId: work.macroTileId,
                     arrayWorkId: work.arrayWorkId
                 });
                 active <= tagged Invalid;

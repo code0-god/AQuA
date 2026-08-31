@@ -8,11 +8,11 @@ import Scratchpad::*;
 import Vector::*;
 
 function UInt#(32) scratchpadLocalBank(AquaMemoryTag tag);
-    return zeroExtend(unpack(tag.localDestination.bank));
+    return zeroExtend(unpack(tag.localAddress.bank));
 endfunction
 
 function UInt#(32) scratchpadLocalRow(AquaMemoryTag tag);
-    return zeroExtend(unpack(tag.localDestination.row));
+    return zeroExtend(unpack(tag.localAddress.row));
 endfunction
 
 function Bool validScratchpadResponse(
@@ -24,7 +24,7 @@ function Bool validScratchpadResponse(
 );
     return
         tag.kind == expectedKind
-        && tag.localDestination.region == expectedRegion
+        && tag.localAddress.region == expectedRegion
         && scratchpadLocalBank(tag) < fromInteger(bankCount)
         && scratchpadLocalRow(tag) < fromInteger(rowCount);
 endfunction

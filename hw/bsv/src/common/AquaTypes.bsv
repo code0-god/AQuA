@@ -7,11 +7,10 @@ typedef UInt#(32) MatrixExtent; // 행렬 크기, 좌표 또는 원소 개수.
 typedef UInt#(32) MatmulJobId; // 전체 matrix multiplication 작업 ID.
 typedef UInt#(32) HostTensorId; // Host/runtime이 소유하는 tensor ID.
 typedef UInt#(32) StripeId; // Activation stripe ID.
-typedef UInt#(32) MacroTileId; // Macro tile ID.
 typedef UInt#(32) ArrayWorkId; // Physical systolic-array work ID.
 typedef UInt#(32) KFragmentId; // K 방향 실행 fragment ID.
 typedef UInt#(40) AquaMemoryTxnId; // 개별 memory transaction ID.
-typedef UInt#(16) LocalSlotId; // Local-memory residency slot ID.
+typedef UInt#(7) ArrayCount; // Physical array-local element count.
 
 // 하나의 HP1 K-block에 적용되는 실행용 block-scale metadata.
 typedef struct {
@@ -30,15 +29,11 @@ typedef struct {
 //
 // MatmulJobId
 //   └─ StripeId
-//       └─ MacroTileId
-//           └─ ArrayWorkId
-//               └─ KFragmentId
+//       └─ ArrayWorkId
+//           └─ KFragmentId
 //
 // AquaMemoryTxnId는 위 execution hierarchy와 별개로,
 // 각 activation/weight/metadata/output memory transaction을 식별한다.
-//
-// LocalSlotId는 향후 current/next tile residency와 double buffering을
-// 표현하기 위한 local-memory slot 식별자다.
 //
 //
 // Hp1BlockScale

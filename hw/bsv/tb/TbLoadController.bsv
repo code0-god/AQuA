@@ -8,13 +8,12 @@ import AquaWorkTypes::*;
 import LoadChannel::*;
 import LoadController::*;
 
-function DefaultAquaLocalAddr localAddress(
+function AquaLocalAddr localAddress(
     AquaLocalRegion region,
     Bit#(16) row
 );
-    return DefaultAquaLocalAddr {
+    return AquaLocalAddr {
         region: region,
-        slot: 1,
         bank: 0,
         row: row
     };
@@ -27,7 +26,6 @@ function ProviderLoadWork#(16) loadWork(UInt#(3) phase);
     return ProviderLoadWork {
         jobId: 7,
         stripeId: 3,
-        macroTileId: 5,
         arrayWorkId: newJ ? 11 : 10,
         fragmentId: 20 + zeroExtend(phase),
         activationTensor: 101,
@@ -99,8 +97,6 @@ module mkTbLoadController(Empty);
                       "activation job tag mismatch");
         dynamicAssert(request.tag.stripeId == expected.stripeId,
                       "activation stripe tag mismatch");
-        dynamicAssert(request.tag.macroTileId == expected.macroTileId,
-                      "activation macro tile tag mismatch");
         dynamicAssert(request.tag.arrayWorkId == expected.arrayWorkId,
                       "activation array work tag mismatch");
         dynamicAssert(request.tag.fragmentId == expected.fragmentId,
@@ -115,9 +111,9 @@ module mkTbLoadController(Empty);
                       "activation request must cover one row");
         dynamicAssert(request.inner.start == expected.fragmentKStart,
                       "activation K start mismatch");
-        dynamicAssert(request.inner.count == expected.fragmentKCount,
+        dynamicAssert(request.inner.count == zeroExtend(expected.fragmentKCount),
                       "activation K count mismatch");
-        dynamicAssert(request.tag.localDestination.region == LocalActivation,
+        dynamicAssert(request.tag.localAddress.region == LocalActivation,
                       "activation destination region mismatch");
         AquaMemoryTag wrongTag = request.tag;
         wrongTag.jobId = request.tag.jobId + 1;
@@ -149,9 +145,9 @@ module mkTbLoadController(Empty);
                       "weight request must cover one J row");
         dynamicAssert(request.inner.start == expected.fragmentKStart,
                       "weight K start mismatch");
-        dynamicAssert(request.inner.count == expected.fragmentKCount,
+        dynamicAssert(request.inner.count == zeroExtend(expected.fragmentKCount),
                       "weight K count mismatch");
-        dynamicAssert(request.tag.localDestination.region == LocalWeight,
+        dynamicAssert(request.tag.localAddress.region == LocalWeight,
                       "weight destination region mismatch");
         dynamicAssert(dut.queuedWeightResponseReady(request.tag),
                       "weight response unexpectedly backpressured");
@@ -176,7 +172,7 @@ module mkTbLoadController(Empty);
             request.inner.start == expected.fragmentBlockIndex,
             "block shift block mismatch"
         );
-        dynamicAssert(request.tag.localDestination.region == LocalHp1Meta,
+        dynamicAssert(request.tag.localAddress.region == LocalHp1Meta,
                       "block shift destination mismatch");
         dynamicAssert(dut.queuedBlockShiftResponseReady(request.tag),
                       "block shift response unexpectedly backpressured");
@@ -197,7 +193,7 @@ module mkTbLoadController(Empty);
                       "row scale J start mismatch");
         dynamicAssert(request.outer.count == zeroExtend(expected.jCount),
                       "row scale J count mismatch");
-        dynamicAssert(request.tag.localDestination.region == LocalHp1Meta,
+        dynamicAssert(request.tag.localAddress.region == LocalHp1Meta,
                       "row scale destination mismatch");
         dynamicAssert(dut.queuedRowScaleResponseReady(request.tag),
                       "row scale response unexpectedly backpressured");

@@ -39,17 +39,14 @@ function KFragment makeFragment(
         jobId: work.jobId,
         stripeId: work.stripeId,
         fragmentKStart: fragmentStart,
-        fragmentKCount: count,
+        fragmentKCount: truncate(count),
         fragmentBlockIndex: fragmentStart / blockSize,
         fragmentEndsBlock: fragmentEnd % blockSize == 0,
         accumulate: accumulate
     };
 endfunction
 
-module mkWorkScheduler(WorkSchedulerIfc#(arrayDim))
-    provisos (
-        Add#(arrayPadding, TLog#(TAdd#(arrayDim, 1)), 32)
-    );
+module mkWorkScheduler(WorkSchedulerIfc#(arrayDim));
     Reg#(Maybe#(ArrayWork#(arrayDim))) activeWork <- mkReg(tagged Invalid);
     Reg#(Maybe#(KFragment)) current <- mkReg(tagged Invalid);
     Reg#(Maybe#(KFragment)) lookahead <- mkReg(tagged Invalid);
@@ -82,7 +79,7 @@ module mkWorkScheduler(WorkSchedulerIfc#(arrayDim))
             priorAccumulation
         );
         MatrixExtent nextStart =
-            first.fragmentKStart + first.fragmentKCount;
+            first.fragmentKStart + zeroExtend(first.fragmentKCount);
         Maybe#(KFragment) next = tagged Invalid;
         if (nextStart < workEnd) begin
             next = tagged Valid makeFragment(
@@ -110,7 +107,7 @@ module mkWorkScheduler(WorkSchedulerIfc#(arrayDim))
         if (isValid(next)) begin
             let promoted = fromMaybe(?, next);
             MatrixExtent followingStart =
-                promoted.fragmentKStart + promoted.fragmentKCount;
+                promoted.fragmentKStart + zeroExtend(promoted.fragmentKCount);
             MatrixExtent workEnd =
                 work.kTileStart + work.kTileCount;
             Maybe#(KFragment) following = tagged Invalid;

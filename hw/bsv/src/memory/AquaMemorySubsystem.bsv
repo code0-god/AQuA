@@ -153,7 +153,6 @@ module mkAquaMemorySubsystem(
         accWidth
     )
 ) provisos (
-    Add#(arrayPadding, TLog#(TAdd#(arrayDim, 1)), 32),
     Add#(lanePadding, TLog#(arrayDim), 32),
     Add#(laneTagPadding, TLog#(arrayDim), 40),
     Add#(accBankPadding, TLog#(TAdd#(arrayDim, 1)), 8),

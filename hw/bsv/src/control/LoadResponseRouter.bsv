@@ -61,7 +61,6 @@ endinterface
 module mkLoadResponseRouter(
     LoadResponseRouterIfc#(arrayDim, bankCount)
 ) provisos (
-    Add#(arrayPadding, TLog#(TAdd#(arrayDim, 1)), 32),
     Add#(lanePadding, TLog#(arrayDim), 32),
     Add#(laneTagPadding, TLog#(arrayDim), 40)
 );

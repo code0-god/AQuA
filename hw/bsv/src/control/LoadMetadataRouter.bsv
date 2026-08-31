@@ -34,7 +34,6 @@ endinterface
 
 module mkLoadMetadataRouter(LoadMetadataRouterIfc#(arrayDim))
     provisos (
-        Add#(arrayPadding, TLog#(TAdd#(arrayDim, 1)), 32),
         Add#(laneTagPadding, TLog#(arrayDim), 40)
     );
     LoadChannelIfc#(arrayDim) blockChannel <- mkLoadChannel;

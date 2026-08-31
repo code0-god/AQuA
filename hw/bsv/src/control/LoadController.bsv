@@ -51,8 +51,6 @@ function Action validateProviderLoadWork(
     ProviderLoadWork#(arrayDim) work,
     Integer bankCount,
     Integer metaEntries
-) provisos (
-    Add#(arrayPadding, TLog#(TAdd#(arrayDim, 1)), 32)
 );
     action
         UInt#(32) iCount = zeroExtend(work.iCount);
@@ -141,7 +139,6 @@ module mkLoadController(LoadControllerIfc#(
     bankCount,
     metaEntries
 )) provisos (
-    Add#(arrayPadding, TLog#(TAdd#(arrayDim, 1)), 32),
     Add#(lanePadding, TLog#(arrayDim), 32),
     Add#(laneTagPadding, TLog#(arrayDim), 40)
 );
@@ -150,8 +147,8 @@ module mkLoadController(LoadControllerIfc#(
     FIFOF#(LoadCompletion) completions <- mkPipelineFIFOF;
     Reg#(Maybe#(ProviderLoadWork#(arrayDim))) active
         <- mkReg(tagged Invalid);
-    Reg#(ArrayExtent#(arrayDim)) activationIssue <- mkReg(0);
-    Reg#(ArrayExtent#(arrayDim)) weightIssue <- mkReg(0);
+    Reg#(ArrayCount) activationIssue <- mkReg(0);
+    Reg#(ArrayCount) weightIssue <- mkReg(0);
     Reg#(Bool) blockNeeded <- mkReg(False);
     Reg#(Bool) blockIssued <- mkReg(False);
     Reg#(Bool) rowNeeded <- mkReg(False);
@@ -238,7 +235,6 @@ module mkLoadController(LoadControllerIfc#(
         completions.enq(LoadCompletion {
             jobId: work.jobId,
             stripeId: work.stripeId,
-            macroTileId: work.macroTileId,
             arrayWorkId: work.arrayWorkId,
             fragmentId: work.fragmentId
         });
