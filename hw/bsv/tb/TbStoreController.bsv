@@ -3,7 +3,7 @@ package TbStoreController;
 import Assert::*;
 import AccumulatorMem::*;
 import AquaLocalAddr::*;
-import AquaMemoryTypes::*;
+import AquaMemoryProtocol::*;
 import AquaTypes::*;
 import AquaWorkTypes::*;
 import StoreController::*;
@@ -78,10 +78,10 @@ module mkTbStoreController(Empty);
     rule holdFirstWrite(
         started
         && outputIndex == 0
-        && dut.outputRequestValid
+        && dut.outputPort.requests.valid
         && firstWriteStall < 3
     );
-        let request = dut.outputRequest;
+        let request = dut.outputPort.requests.first;
         dynamicAssert(request.rawValue == 100,
                       "stalled output payload changed");
         dynamicAssert(request.outputRow.start == 20,
@@ -89,7 +89,7 @@ module mkTbStoreController(Empty);
         dynamicAssert(request.outputColumn.start == 30,
                       "stalled output column changed");
         dynamicAssert(
-            !dut.outputAckReady(AquaMemoryWriteAck {
+            !dut.outputPort.responses.ready(AquaMemoryWriteAck {
                 tag: request.tag,
                 accepted: True
             }),
@@ -100,14 +100,12 @@ module mkTbStoreController(Empty);
 
     rule consumeOutput(
         started
-        && dut.outputRequestValid
+        && dut.outputPort.requests.valid
         && !(outputIndex == 0 && firstWriteStall < 3)
     );
-        let request = dut.outputRequest;
+        let request = dut.outputPort.requests.first;
         MatrixExtent localI = zeroExtend(outputIndex / 3);
         MatrixExtent localJ = zeroExtend(outputIndex % 3);
-        dynamicAssert(request.tag.kind == MemoryRawOutput,
-                      "output request kind mismatch");
         dynamicAssert(request.tag.jobId == 9,
                       "output request job mismatch");
         dynamicAssert(request.tag.stripeId == 4,
@@ -129,7 +127,7 @@ module mkTbStoreController(Empty);
                 == 100 + signExtend(unpack(pack(outputIndex))),
             "raw accumulator value changed"
         );
-        dut.consumeOutputRequest;
+        dut.outputPort.requests.consume;
         pendingProviderAck <= tagged Valid request.tag;
         outputIndex <= outputIndex + 1;
     endrule
@@ -139,7 +137,7 @@ module mkTbStoreController(Empty);
         && outputIndex == 1
         && firstAckStall < 2
     );
-        dynamicAssert(!dut.outputRequestValid,
+        dynamicAssert(!dut.outputPort.requests.valid,
                       "store advanced before output acknowledgement");
         firstAckStall <= firstAckStall + 1;
     endrule
@@ -147,12 +145,12 @@ module mkTbStoreController(Empty);
     rule acknowledgeOutput(
         isValid(pendingProviderAck)
         && !(outputIndex == 1 && firstAckStall < 2)
-        && dut.outputAckReady(AquaMemoryWriteAck {
+        && dut.outputPort.responses.ready(AquaMemoryWriteAck {
             tag: fromMaybe(?, pendingProviderAck),
             accepted: True
         })
     );
-        dut.putOutputAck(AquaMemoryWriteAck {
+        dut.outputPort.responses.put(AquaMemoryWriteAck {
             tag: fromMaybe(?, pendingProviderAck),
             accepted: True
         });

@@ -2,45 +2,159 @@ package LoadController;
 
 import Assert::*;
 import AquaLocalAddr::*;
-import AquaMemoryTypes::*;
+import AquaMemoryProtocol::*;
 import AquaTypes::*;
 import AquaWorkTypes::*;
 import FIFOF::*;
-import LoadChannel::*;
-import LoadRequestBuilder::*;
-import LoadResponseRouter::*;
 import SpecialFIFOs::*;
 import Vector::*;
 
+typedef struct {
+    MatmulJobId jobId;
+    HostTensorId weightTensor;
+    MatrixExtent jStart;
+    MatrixExtent jCount;
+    AquaLocalAddr destination;
+} RowScaleReuseKey deriving (Bits, Eq, FShow);
+
+typedef struct {
+    RowScaleReuseKey rowKey;
+    MatrixExtent blockIndex;
+    AquaLocalAddr destination;
+} BlockScaleReuseKey deriving (Bits, Eq, FShow);
+
+function RowScaleReuseKey rowScaleReuseKey(
+    ProviderLoadWork#(arrayDim) work
+);
+    return RowScaleReuseKey {
+        jobId: work.jobId,
+        weightTensor: work.weightTensor,
+        jStart: work.jStart,
+        jCount: zeroExtend(work.jCount),
+        destination: work.rowScaleDestination
+    };
+endfunction
+
+function BlockScaleReuseKey blockScaleReuseKey(
+    ProviderLoadWork#(arrayDim) work
+);
+    return BlockScaleReuseKey {
+        rowKey: rowScaleReuseKey(work),
+        blockIndex: work.fragmentBlockIndex,
+        destination: work.blockShiftDestination
+    };
+endfunction
+
+function AquaMemoryTag loadTag(
+    ProviderLoadWork#(arrayDim) work,
+    MatrixExtent index,
+    AquaLocalAddr address
+);
+    return AquaMemoryTag {
+        jobId: work.jobId,
+        stripeId: work.stripeId,
+        arrayWorkId: work.arrayWorkId,
+        fragmentId: work.fragmentId,
+        transactionId: memoryTransactionId(index),
+        localAddress: address
+    };
+endfunction
+
+function AquaMemoryReadRequest activationRequest(
+    ProviderLoadWork#(arrayDim) work,
+    MatrixExtent rowIndex,
+    Integer bankCount
+);
+    let address = offsetBankedAddress(
+        work.activationBase,
+        rowIndex,
+        bankCount
+    );
+    return AquaMemoryReadRequest {
+        tag: loadTag(work, rowIndex, address),
+        tensorId: work.activationTensor,
+        outer: LogicalRange { start: work.iStart + rowIndex, count: 1 },
+        inner: LogicalRange {
+            start: work.fragmentKStart,
+            count: zeroExtend(work.fragmentKCount)
+        }
+    };
+endfunction
+
+function AquaMemoryReadRequest weightRequest(
+    ProviderLoadWork#(arrayDim) work,
+    MatrixExtent jIndex,
+    Integer bankCount
+);
+    let address = offsetBankedAddress(
+        work.weightBase,
+        jIndex,
+        bankCount
+    );
+    return AquaMemoryReadRequest {
+        tag: loadTag(work, jIndex, address),
+        tensorId: work.weightTensor,
+        // Provider orientation remains canonical W_source[J, K].
+        outer: LogicalRange { start: work.jStart + jIndex, count: 1 },
+        inner: LogicalRange {
+            start: work.fragmentKStart,
+            count: zeroExtend(work.fragmentKCount)
+        }
+    };
+endfunction
+
+function AquaMemoryReadRequest blockShiftRequest(
+    ProviderLoadWork#(arrayDim) work
+);
+    return AquaMemoryReadRequest {
+        tag: loadTag(work, 0, work.blockShiftDestination),
+        tensorId: work.weightTensor,
+        outer: LogicalRange {
+            start: work.jStart,
+            count: zeroExtend(work.jCount)
+        },
+        inner: LogicalRange { start: work.fragmentBlockIndex, count: 1 }
+    };
+endfunction
+
+function AquaMemoryReadRequest rowShiftRequest(
+    ProviderLoadWork#(arrayDim) work
+);
+    return AquaMemoryReadRequest {
+        tag: loadTag(work, 0, work.rowScaleDestination),
+        tensorId: work.weightTensor,
+        outer: LogicalRange {
+            start: work.jStart,
+            count: zeroExtend(work.jCount)
+        },
+        inner: LogicalRange { start: 0, count: 1 }
+    };
+endfunction
+
+function Bool metadataMaskMatches(
+    Vector#(arrayDim, Bool) mask,
+    ArrayCount jCount
+);
+    Bool valid = True;
+    for (Integer lane = 0; lane < valueOf(arrayDim); lane = lane + 1) begin
+        valid = valid && mask[lane] == (fromInteger(lane) < jCount);
+    end
+    return valid;
+endfunction
+
 interface LoadControllerIfc#(
     numeric type arrayDim,
-    numeric type bankCount,
+    numeric type activationBankCount,
+    numeric type weightBankCount,
     numeric type metaEntries
 );
     method Bool scheduleReady;
     method Action schedule(ProviderLoadWork#(arrayDim) work);
 
-    interface LoadRequestSourceIfc activationRequests;
-    interface LoadRequestSourceIfc weightRequests;
-    interface LoadRequestSourceIfc blockShiftRequests;
-    interface LoadRequestSourceIfc rowScaleRequests;
-
-    method Bool activationResponseReady(AquaMemoryTag tag);
-    method Action completeActivation(AquaMemoryTag tag);
-    method Bool queuedActivationResponseReady(AquaMemoryTag tag);
-    method Action completeQueuedActivation(AquaMemoryTag tag);
-    method Bool weightResponseReady(AquaMemoryTag tag);
-    method Action completeWeight(AquaMemoryTag tag);
-    method Bool queuedWeightResponseReady(AquaMemoryTag tag);
-    method Action completeQueuedWeight(AquaMemoryTag tag);
-    method Bool blockShiftResponseReady(AquaMemoryTag tag);
-    method Action completeBlockShift(AquaMemoryTag tag);
-    method Bool queuedBlockShiftResponseReady(AquaMemoryTag tag);
-    method Action completeQueuedBlockShift(AquaMemoryTag tag);
-    method Bool rowScaleResponseReady(AquaMemoryTag tag);
-    method Action completeRowScale(AquaMemoryTag tag);
-    method Bool queuedRowScaleResponseReady(AquaMemoryTag tag);
-    method Action completeQueuedRowScale(AquaMemoryTag tag);
+    interface ReadPortIfc#(AquaMemoryTag) activationPort;
+    interface ReadPortIfc#(AquaMemoryTag) weightPort;
+    interface ReadPortIfc#(AquaMemoryTag) blockShiftPort;
+    interface ReadPortIfc#(AquaMemoryTag) rowShiftPort;
 
     method Bool metadataResponseMaskValid(Vector#(arrayDim, Bool) mask);
 
@@ -52,7 +166,8 @@ endinterface
 
 function Action validateProviderLoadWork(
     ProviderLoadWork#(arrayDim) work,
-    Integer bankCount,
+    Integer activationBankCount,
+    Integer weightBankCount,
     Integer metaEntries
 );
     action
@@ -72,11 +187,11 @@ function Action validateProviderLoadWork(
         UInt#(32) weightBaseRow =
             zeroExtend(unpack(work.weightBase.row));
         UInt#(40) activationLinearEnd =
-            zeroExtend(activationBaseRow) * fromInteger(bankCount)
+            zeroExtend(activationBaseRow) * fromInteger(activationBankCount)
             + zeroExtend(activationBaseBank)
             + zeroExtend(iCount == 0 ? 0 : iCount - 1);
         UInt#(40) weightLinearEnd =
-            zeroExtend(weightBaseRow) * fromInteger(bankCount)
+            zeroExtend(weightBaseRow) * fromInteger(weightBankCount)
             + zeroExtend(weightBaseBank)
             + zeroExtend(jCount == 0 ? 0 : jCount - 1);
         UInt#(32) blockMetadataBank =
@@ -108,54 +223,61 @@ function Action validateProviderLoadWork(
                       "activation base has wrong local region");
         dynamicAssert(work.weightBase.region == LocalWeight,
                       "weight base has wrong local region");
-        dynamicAssert(activationBaseBank < fromInteger(bankCount),
+        dynamicAssert(activationBaseBank < fromInteger(activationBankCount),
                       "activation base bank exceeds configured banks");
-        dynamicAssert(weightBaseBank < fromInteger(bankCount),
+        dynamicAssert(weightBaseBank < fromInteger(weightBankCount),
                       "weight base bank exceeds configured banks");
         dynamicAssert(
-            activationLinearEnd / fromInteger(bankCount)
+            activationLinearEnd / fromInteger(activationBankCount)
                 < fromInteger(2 ** 16),
             "activation local row range overflow"
         );
         dynamicAssert(
-            weightLinearEnd / fromInteger(bankCount)
+            weightLinearEnd / fromInteger(weightBankCount)
                 < fromInteger(2 ** 16),
             "weight local row range overflow"
         );
         dynamicAssert(work.blockShiftDestination.region == LocalHp1Meta,
                       "block shift has wrong local region");
         dynamicAssert(work.rowScaleDestination.region == LocalHp1Meta,
-                      "row scale has wrong local region");
+                      "row shift has wrong local region");
         dynamicAssert(blockMetadataBank == 0,
                       "block shift metadata bank must be zero");
         dynamicAssert(rowMetadataBank == 0,
-                      "row scale metadata bank must be zero");
+                      "row shift metadata bank must be zero");
         dynamicAssert(blockMetadataRow < fromInteger(metaEntries),
                       "block shift metadata row out of bounds");
         dynamicAssert(rowMetadataRow < fromInteger(metaEntries),
-                      "row scale metadata row out of bounds");
+                      "row shift metadata row out of bounds");
     endaction
 endfunction
 
 module mkLoadController(LoadControllerIfc#(
     arrayDim,
-    bankCount,
+    activationBankCount,
+    weightBankCount,
     metaEntries
 )) provisos (
-    Add#(lanePadding, TLog#(arrayDim), 32),
-    Add#(laneTagPadding, TLog#(arrayDim), 40)
+    Add#(activationLanePadding, TLog#(arrayDim), 32),
+    Add#(weightLanePadding, TLog#(arrayDim), 32)
 );
-    LoadResponseRouterIfc#(arrayDim, bankCount) router
-        <- mkLoadResponseRouter;
+    Reg#(Maybe#(AquaMemoryReadRequest)) activationOffered <- mkReg(tagged Invalid);
+    Reg#(Maybe#(AquaMemoryReadRequest)) weightOffered <- mkReg(tagged Invalid);
+    Reg#(Maybe#(AquaMemoryReadRequest)) blockOffered <- mkReg(tagged Invalid);
+    Reg#(Maybe#(AquaMemoryReadRequest)) rowOffered <- mkReg(tagged Invalid);
+    Reg#(Maybe#(AquaMemoryTag)) activationPending <- mkReg(tagged Invalid);
+    Reg#(Maybe#(AquaMemoryTag)) weightPending <- mkReg(tagged Invalid);
+    Reg#(Maybe#(AquaMemoryTag)) blockPending <- mkReg(tagged Invalid);
+    Reg#(Maybe#(AquaMemoryTag)) rowPending <- mkReg(tagged Invalid);
     FIFOF#(LoadCompletion) completions <- mkPipelineFIFOF;
     Reg#(Maybe#(ProviderLoadWork#(arrayDim))) active
         <- mkReg(tagged Invalid);
     Reg#(ArrayCount) activationIssue <- mkReg(0);
     Reg#(ArrayCount) weightIssue <- mkReg(0);
-    Reg#(Bool) blockNeeded <- mkReg(False);
     Reg#(Bool) blockIssued <- mkReg(False);
-    Reg#(Bool) rowNeeded <- mkReg(False);
     Reg#(Bool) rowIssued <- mkReg(False);
+    Reg#(Maybe#(RowScaleReuseKey)) lastRowKey <- mkReg(tagged Invalid);
+    Reg#(Maybe#(BlockScaleReuseKey)) lastBlockKey <- mkReg(tagged Invalid);
     Reg#(UInt#(64)) stagingCycles <- mkReg(0);
 
     staticAssert(
@@ -165,73 +287,82 @@ module mkLoadController(LoadControllerIfc#(
         "load controller array dimension must be 16, 32, or 64"
     );
 
-    rule issueActivation (
+    function Bool rowShiftNeeded(ProviderLoadWork#(arrayDim) work);
+        let key = rowScaleReuseKey(work);
+        return !isValid(lastRowKey) || fromMaybe(?, lastRowKey) != key;
+    endfunction
+
+    function Bool blockShiftNeeded(ProviderLoadWork#(arrayDim) work);
+        let key = blockScaleReuseKey(work);
+        return !isValid(lastBlockKey) || fromMaybe(?, lastBlockKey) != key;
+    endfunction
+
+    rule issueActivation(
         isValid(active)
         && activationIssue < fromMaybe(?, active).iCount
-        && router.activationIssueReady
+        && !isValid(activationOffered)
+        && !isValid(activationPending)
     );
         let work = fromMaybe(?, active);
         MatrixExtent index = zeroExtend(activationIssue);
-        router.issueActivation(
-            truncate(pack(index)),
-            LoadRequestBuilder::activationRequest(
-                work,
-                index,
-                valueOf(bankCount)
-            )
+        activationOffered <= tagged Valid activationRequest(
+            work,
+            index,
+            valueOf(activationBankCount)
         );
         activationIssue <= activationIssue + 1;
     endrule
 
-    rule issueWeight (
+    rule issueWeight(
         isValid(active)
         && weightIssue < fromMaybe(?, active).jCount
-        && router.weightIssueReady
+        && !isValid(weightOffered)
+        && !isValid(weightPending)
     );
         let work = fromMaybe(?, active);
         MatrixExtent index = zeroExtend(weightIssue);
-        router.issueWeight(
-            truncate(pack(index)),
-            LoadRequestBuilder::weightRequest(
-                work,
-                index,
-                valueOf(bankCount)
-            )
+        weightOffered <= tagged Valid weightRequest(
+            work,
+            index,
+            valueOf(weightBankCount)
         );
         weightIssue <= weightIssue + 1;
     endrule
 
-    rule issueBlockShift (
+    rule issueBlockShift(
         isValid(active)
-        && blockNeeded
         && !blockIssued
-        && router.blockIssueReady
+        && !isValid(blockOffered)
+        && !isValid(blockPending)
     );
-        router.issueBlock(
-            LoadRequestBuilder::blockShiftRequest(fromMaybe(?, active))
-        );
+        blockOffered <= tagged Valid blockShiftRequest(fromMaybe(?, active));
         blockIssued <= True;
     endrule
 
-    rule issueRowScale (
+    rule issueRowShift(
         isValid(active)
-        && rowNeeded
         && !rowIssued
-        && router.rowIssueReady
+        && !isValid(rowOffered)
+        && !isValid(rowPending)
     );
-        router.issueRow(
-            LoadRequestBuilder::rowScaleRequest(fromMaybe(?, active))
-        );
+        rowOffered <= tagged Valid rowShiftRequest(fromMaybe(?, active));
         rowIssued <= True;
     endrule
 
-    rule completeLoad (
+    rule completeLoad(
         isValid(active)
         && activationIssue == fromMaybe(?, active).iCount
         && weightIssue == fromMaybe(?, active).jCount
         && blockIssued
         && rowIssued
-        && router.finishReady
+        && !isValid(activationOffered)
+        && !isValid(weightOffered)
+        && !isValid(blockOffered)
+        && !isValid(rowOffered)
+        && !isValid(activationPending)
+        && !isValid(weightPending)
+        && !isValid(blockPending)
+        && !isValid(rowPending)
         && completions.notFull
     );
         let work = fromMaybe(?, active);
@@ -241,7 +372,6 @@ module mkLoadController(LoadControllerIfc#(
             arrayWorkId: work.arrayWorkId,
             fragmentId: work.fragmentId
         });
-        router.finish;
         active <= tagged Invalid;
     endrule
 
@@ -249,96 +379,134 @@ module mkLoadController(LoadControllerIfc#(
         stagingCycles <= stagingCycles + 1;
     endrule
 
-    method Bool scheduleReady =
-        !isValid(active)
-        && completions.notFull
-        && router.startReady;
+    method Bool scheduleReady = !isValid(active) && completions.notFull;
 
     method Action schedule(ProviderLoadWork#(arrayDim) work)
-        if (
-            !isValid(active)
-            && completions.notFull
-            && router.startReady
-        );
+        if (!isValid(active) && completions.notFull);
         validateProviderLoadWork(
             work,
-            valueOf(bankCount),
+            valueOf(activationBankCount),
+            valueOf(weightBankCount),
             valueOf(metaEntries)
         );
         active <= tagged Valid work;
         activationIssue <= 0;
         weightIssue <= 0;
-        blockNeeded <= router.blockShiftNeeded(work);
-        blockIssued <= !router.blockShiftNeeded(work);
-        rowNeeded <= router.rowScaleNeeded(work);
-        rowIssued <= !router.rowScaleNeeded(work);
-        router.start(work);
+        blockIssued <= !blockShiftNeeded(work);
+        rowIssued <= !rowShiftNeeded(work);
     endmethod
 
-    interface activationRequests = router.activationRequests;
-    interface weightRequests = router.weightRequests;
-    interface blockShiftRequests = router.blockShiftRequests;
-    interface rowScaleRequests = router.rowScaleRequests;
+    interface ReadPortIfc activationPort;
+        interface ReadRequestSourceIfc requests;
+            method Bool valid = isValid(activationOffered);
+            method AquaMemoryReadRequest first if (isValid(activationOffered));
+                return fromMaybe(?, activationOffered);
+            endmethod
+            method Action consume
+                if (isValid(activationOffered) && !isValid(activationPending));
+                activationPending <= tagged Valid fromMaybe(?, activationOffered).tag;
+                activationOffered <= tagged Invalid;
+            endmethod
+        endinterface
+        interface ReadResponseSinkIfc responses;
+            method Bool ready(AquaMemoryTag tag) =
+                isValid(activationPending)
+                && tag == fromMaybe(?, activationPending);
+            method Action put(AquaMemoryTag tag);
+                Bool valid = isValid(activationPending)
+                    && tag == fromMaybe(?, activationPending);
+                dynamicAssert(valid, "activation response is not outstanding");
+                if (valid) activationPending <= tagged Invalid;
+            endmethod
+        endinterface
+    endinterface
 
-    method Bool activationResponseReady(AquaMemoryTag tag) =
-        router.activationResponseReady(tag);
-    method Action completeActivation(AquaMemoryTag tag);
-        Bool valid = router.activationResponseReady(tag);
-        dynamicAssert(valid, "activation response is not outstanding");
-        if (valid) router.completeActivation(tag);
-    endmethod
-    method Bool queuedActivationResponseReady(AquaMemoryTag tag) =
-        router.queuedActivationResponseReady(tag);
-    method Action completeQueuedActivation(AquaMemoryTag tag);
-        Bool valid = router.queuedActivationResponseReady(tag);
-        dynamicAssert(valid, "queued activation response mismatch");
-        if (valid) router.completeQueuedActivation(tag);
-    endmethod
-    method Bool weightResponseReady(AquaMemoryTag tag) =
-        router.weightResponseReady(tag);
-    method Action completeWeight(AquaMemoryTag tag);
-        Bool valid = router.weightResponseReady(tag);
-        dynamicAssert(valid, "weight response is not outstanding");
-        if (valid) router.completeWeight(tag);
-    endmethod
-    method Bool queuedWeightResponseReady(AquaMemoryTag tag) =
-        router.queuedWeightResponseReady(tag);
-    method Action completeQueuedWeight(AquaMemoryTag tag);
-        Bool valid = router.queuedWeightResponseReady(tag);
-        dynamicAssert(valid, "queued weight response mismatch");
-        if (valid) router.completeQueuedWeight(tag);
-    endmethod
-    method Bool blockShiftResponseReady(AquaMemoryTag tag) =
-        router.blockShiftResponseReady(tag);
-    method Action completeBlockShift(AquaMemoryTag tag);
-        Bool valid = router.blockShiftResponseReady(tag);
-        dynamicAssert(valid, "block shift response is not outstanding");
-        if (valid) router.completeBlockShift(tag);
-    endmethod
-    method Bool queuedBlockShiftResponseReady(AquaMemoryTag tag) =
-        router.queuedBlockShiftResponseReady(tag);
-    method Action completeQueuedBlockShift(AquaMemoryTag tag);
-        Bool valid = router.queuedBlockShiftResponseReady(tag);
-        dynamicAssert(valid, "queued block shift response mismatch");
-        if (valid) router.completeQueuedBlockShift(tag);
-    endmethod
-    method Bool rowScaleResponseReady(AquaMemoryTag tag) =
-        router.rowScaleResponseReady(tag);
-    method Action completeRowScale(AquaMemoryTag tag);
-        Bool valid = router.rowScaleResponseReady(tag);
-        dynamicAssert(valid, "row scale response is not outstanding");
-        if (valid) router.completeRowScale(tag);
-    endmethod
-    method Bool queuedRowScaleResponseReady(AquaMemoryTag tag) =
-        router.queuedRowScaleResponseReady(tag);
-    method Action completeQueuedRowScale(AquaMemoryTag tag);
-        Bool valid = router.queuedRowScaleResponseReady(tag);
-        dynamicAssert(valid, "queued row scale response mismatch");
-        if (valid) router.completeQueuedRowScale(tag);
-    endmethod
+    interface ReadPortIfc weightPort;
+        interface ReadRequestSourceIfc requests;
+            method Bool valid = isValid(weightOffered);
+            method AquaMemoryReadRequest first if (isValid(weightOffered));
+                return fromMaybe(?, weightOffered);
+            endmethod
+            method Action consume
+                if (isValid(weightOffered) && !isValid(weightPending));
+                weightPending <= tagged Valid fromMaybe(?, weightOffered).tag;
+                weightOffered <= tagged Invalid;
+            endmethod
+        endinterface
+        interface ReadResponseSinkIfc responses;
+            method Bool ready(AquaMemoryTag tag) =
+                isValid(weightPending) && tag == fromMaybe(?, weightPending);
+            method Action put(AquaMemoryTag tag);
+                Bool valid = isValid(weightPending)
+                    && tag == fromMaybe(?, weightPending);
+                dynamicAssert(valid, "weight response is not outstanding");
+                if (valid) weightPending <= tagged Invalid;
+            endmethod
+        endinterface
+    endinterface
 
-    method Bool metadataResponseMaskValid(Vector#(arrayDim, Bool) mask) =
-        router.metadataResponseMaskValid(mask);
+    interface ReadPortIfc blockShiftPort;
+        interface ReadRequestSourceIfc requests;
+            method Bool valid = isValid(blockOffered);
+            method AquaMemoryReadRequest first if (isValid(blockOffered));
+                return fromMaybe(?, blockOffered);
+            endmethod
+            method Action consume
+                if (isValid(blockOffered) && !isValid(blockPending));
+                blockPending <= tagged Valid fromMaybe(?, blockOffered).tag;
+                blockOffered <= tagged Invalid;
+            endmethod
+        endinterface
+        interface ReadResponseSinkIfc responses;
+            method Bool ready(AquaMemoryTag tag) =
+                isValid(blockPending) && tag == fromMaybe(?, blockPending);
+            method Action put(AquaMemoryTag tag);
+                Bool valid = isValid(blockPending)
+                    && tag == fromMaybe(?, blockPending);
+                dynamicAssert(valid, "block shift response is not outstanding");
+                if (valid) begin
+                    blockPending <= tagged Invalid;
+                    lastBlockKey <= tagged Valid blockScaleReuseKey(
+                        fromMaybe(?, active)
+                    );
+                end
+            endmethod
+        endinterface
+    endinterface
+
+    interface ReadPortIfc rowShiftPort;
+        interface ReadRequestSourceIfc requests;
+            method Bool valid = isValid(rowOffered);
+            method AquaMemoryReadRequest first if (isValid(rowOffered));
+                return fromMaybe(?, rowOffered);
+            endmethod
+            method Action consume
+                if (isValid(rowOffered) && !isValid(rowPending));
+                rowPending <= tagged Valid fromMaybe(?, rowOffered).tag;
+                rowOffered <= tagged Invalid;
+            endmethod
+        endinterface
+        interface ReadResponseSinkIfc responses;
+            method Bool ready(AquaMemoryTag tag) =
+                isValid(rowPending) && tag == fromMaybe(?, rowPending);
+            method Action put(AquaMemoryTag tag);
+                Bool valid = isValid(rowPending)
+                    && tag == fromMaybe(?, rowPending);
+                dynamicAssert(valid, "row shift response is not outstanding");
+                if (valid) begin
+                    rowPending <= tagged Invalid;
+                    lastRowKey <= tagged Valid rowScaleReuseKey(
+                        fromMaybe(?, active)
+                    );
+                end
+            endmethod
+        endinterface
+    endinterface
+
+    method Bool metadataResponseMaskValid(Vector#(arrayDim, Bool) mask);
+        return isValid(active)
+            && metadataMaskMatches(mask, fromMaybe(?, active).jCount);
+    endmethod
 
     method Bool completionValid = completions.notEmpty;
     method LoadCompletion completion if (completions.notEmpty);

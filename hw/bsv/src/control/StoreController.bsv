@@ -3,12 +3,11 @@ package StoreController;
 import Assert::*;
 import AccumulatorMem::*;
 import AquaLocalAddr::*;
-import AquaMemoryTypes::*;
+import AquaMemoryProtocol::*;
 import AquaTypes::*;
 import AquaWorkTypes::*;
 import FIFOF::*;
 import SpecialFIFOs::*;
-import LoadRequestBuilder::*;
 
 function AquaLocalAddr accumulatorAddress(
     StoreWork#(arrayDim) work,
@@ -34,8 +33,7 @@ function AquaMemoryTag storeTag(
         stripeId: work.stripeId,
         arrayWorkId: work.arrayWorkId,
         fragmentId: 0,
-        kind: MemoryRawOutput,
-        transactionId: transactionId(MemoryRawOutput, transaction),
+        transactionId: memoryTransactionId(transaction),
         localAddress: source
     };
 endfunction
@@ -84,11 +82,7 @@ interface StoreControllerIfc#(
     method Bool startReady;
     method Action start(StoreWork#(arrayDim) work);
 
-    method Bool outputRequestValid;
-    method AquaMemoryWriteRequest#(accWidth) outputRequest;
-    method Action consumeOutputRequest;
-    method Bool outputAckReady(AquaMemoryWriteAck acknowledgement);
-    method Action putOutputAck(AquaMemoryWriteAck acknowledgement);
+    interface WritePortIfc#(accWidth) outputPort;
 
     method Bool completionValid;
     method StoreCompletion completion;
@@ -200,71 +194,78 @@ module mkStoreController#(
         state <= StoreRead;
     endmethod
 
-    method Bool outputRequestValid = outputRequests.notEmpty;
+    interface WritePortIfc outputPort;
+        interface WriteRequestSourceIfc requests;
+            method Bool valid = outputRequests.notEmpty;
+            method AquaMemoryWriteRequest#(accWidth) first
+                if (outputRequests.notEmpty);
+                return outputRequests.first;
+            endmethod
+            method Action consume
+                if (
+                    outputRequests.notEmpty
+                    && state == StoreOfferWrite
+                    && isValid(active)
+                );
+                pendingAck <= tagged Valid outputRequests.first.tag;
+                outputRequests.deq;
+                state <= StoreWaitAck;
+            endmethod
+        endinterface
 
-    method AquaMemoryWriteRequest#(accWidth) outputRequest
-        if (outputRequests.notEmpty);
-        return outputRequests.first;
-    endmethod
+        interface WriteResponseSinkIfc responses;
+            method Bool ready(AquaMemoryWriteAck acknowledgement);
+                return
+                    state == StoreWaitAck
+                    && isValid(active)
+                    && isValid(pendingAck)
+                    && completions.notFull
+                    && acknowledgement.accepted
+                    && acknowledgement.tag == fromMaybe(?, pendingAck);
+            endmethod
 
-    method Action consumeOutputRequest
-        if (
-            outputRequests.notEmpty
-            && state == StoreOfferWrite
-            && isValid(active)
-        );
-        pendingAck <= tagged Valid outputRequests.first.tag;
-        outputRequests.deq;
-        state <= StoreWaitAck;
-    endmethod
-
-    method Bool outputAckReady(AquaMemoryWriteAck acknowledgement);
-        return
-            state == StoreWaitAck
-            && isValid(active)
-            && isValid(pendingAck)
-            && completions.notFull
-            && acknowledgement.accepted
-            && acknowledgement.tag == fromMaybe(?, pendingAck);
-    endmethod
-
-    method Action putOutputAck(AquaMemoryWriteAck acknowledgement)
-        if (
-            state == StoreWaitAck
-            && isValid(active)
-            && isValid(pendingAck)
-            && completions.notFull
-        );
-        let work = fromMaybe(?, active);
-        Bool valid =
-            acknowledgement.accepted
-            && acknowledgement.tag == fromMaybe(?, pendingAck);
-        dynamicAssert(valid, "output acknowledgement mismatch or rejection");
-        if (valid) begin
-            pendingAck <= tagged Invalid;
-            if (
-                localJ + 1 == work.jCount
-                && localI + 1 == work.iCount
-            ) begin
-                completions.enq(StoreCompletion {
-                    jobId: work.jobId,
-                    stripeId: work.stripeId,
-                    arrayWorkId: work.arrayWorkId
-                });
-                active <= tagged Invalid;
-                state <= StoreIdle;
-            end
-            else if (localJ + 1 == work.jCount) begin
-                localJ <= 0;
-                localI <= localI + 1;
-                state <= StoreRead;
-            end
-            else begin
-                localJ <= localJ + 1;
-                state <= StoreRead;
-            end
-        end
-    endmethod
+            method Action put(AquaMemoryWriteAck acknowledgement)
+                if (
+                    state == StoreWaitAck
+                    && isValid(active)
+                    && isValid(pendingAck)
+                    && completions.notFull
+                );
+                let work = fromMaybe(?, active);
+                Bool valid =
+                    acknowledgement.accepted
+                    && acknowledgement.tag == fromMaybe(?, pendingAck);
+                dynamicAssert(
+                    valid,
+                    "output acknowledgement mismatch or rejection"
+                );
+                if (valid) begin
+                    pendingAck <= tagged Invalid;
+                    if (
+                        localJ + 1 == work.jCount
+                        && localI + 1 == work.iCount
+                    ) begin
+                        completions.enq(StoreCompletion {
+                            jobId: work.jobId,
+                            stripeId: work.stripeId,
+                            arrayWorkId: work.arrayWorkId
+                        });
+                        active <= tagged Invalid;
+                        state <= StoreIdle;
+                    end
+                    else if (localJ + 1 == work.jCount) begin
+                        localJ <= 0;
+                        localI <= localI + 1;
+                        state <= StoreRead;
+                    end
+                    else begin
+                        localJ <= localJ + 1;
+                        state <= StoreRead;
+                    end
+                end
+            endmethod
+        endinterface
+    endinterface
 
     method Bool completionValid = completions.notEmpty;
     method StoreCompletion completion if (completions.notEmpty);

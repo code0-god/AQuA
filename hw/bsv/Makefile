@@ -12,18 +12,13 @@ BSV_SOURCE_FILES := \
 	src/common/AquaTypes.bsv \
 	src/memory/AquaLocalAddr.bsv \
 	src/common/AquaWorkTypes.bsv \
-	src/memory/AquaMemoryTypes.bsv \
+	src/common/AquaMemoryProtocol.bsv \
 	src/memory/Scratchpad.bsv \
 	src/memory/Hp1MetaMem.bsv \
 	src/memory/AccumulatorMem.bsv \
-	src/control/LoadChannel.bsv \
-	src/control/LoadRequestBuilder.bsv \
-	src/control/LoadMetadataRouter.bsv \
-	src/control/LoadResponseRouter.bsv \
 	src/control/LoadController.bsv \
 	src/control/StoreController.bsv \
-	src/memory/ScratchpadResponseStager.bsv \
-	src/memory/MetadataResponseStager.bsv \
+	src/memory/LoadStager.bsv \
 	src/memory/AquaMemorySubsystem.bsv \
 	src/control/WorkScheduler.bsv \
 	src/control/MatmulScheduler.bsv

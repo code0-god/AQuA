@@ -70,8 +70,8 @@ module mkTbMockAquaProvider(Empty);
         && isValid(oneSeen)
         && isValid(fixedSeen)
     );
-        dynamicAssert(fromMaybe(?, sameSeen) == 0,
-                      "same-cycle response was delayed");
+        dynamicAssert(fromMaybe(?, sameSeen) == 1,
+                      "zero-latency provider exposed response in request cycle");
         dynamicAssert(fromMaybe(?, oneSeen) == 1,
                       "one-cycle response latency mismatch");
         dynamicAssert(fromMaybe(?, fixedSeen) == 5,

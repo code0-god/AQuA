@@ -4,7 +4,7 @@ import Assert::*;
 import AccumulatorMem::*;
 import AquaLocalAddr::*;
 import AquaMemorySubsystem::*;
-import AquaMemoryTypes::*;
+import AquaMemoryProtocol::*;
 import AquaTypes::*;
 import AquaWorkTypes::*;
 import Hp1MetaMem::*;
@@ -66,15 +66,25 @@ function StoreWork#(16) integrationStore;
     };
 endfunction
 
-(* descending_urgency = "requestActivation, dut_load_issueActivation, requestWeight, dut_load_issueWeight, requestBlock, dut_load_issueBlockShift, requestRow, dut_load_issueRowScale" *)
+(* descending_urgency = "requestActivation, dut_load_issueActivation, requestWeight, dut_load_issueWeight, requestBlock, dut_load_issueBlockShift, requestRow, dut_load_issueRowShift" *)
 module mkTbAquaMemorySubsystem(Empty);
-    AquaMemorySubsystemIfc#(16, 2, 16, 16, 8, 8, 6, 8, 32) dut
-        <- mkAquaMemorySubsystem;
+    AquaMemorySubsystemIfc#(
+        16,
+        2, 16,
+        3, 17,
+        16,
+        8, 8, 6,
+        5, 8, 32
+    ) dut <- mkAquaMemorySubsystem;
 
+    MockProviderPipeIfc#(ActivationResponse) activationPipe
+        <- mkMockProviderPipe(0);
     MockProviderPipeIfc#(WeightResponse) weightPipe
         <- mkMockProviderPipe(1);
     MockProviderPipeIfc#(BlockResponse) blockPipe
         <- mkMockProviderPipe(3);
+    MockProviderPipeIfc#(RowResponse) rowPipe
+        <- mkMockProviderPipe(0);
 
     Reg#(UInt#(3)) accumulatorInitIssued <- mkReg(0);
     Reg#(UInt#(3)) accumulatorInitDone <- mkReg(0);
@@ -127,31 +137,31 @@ module mkTbAquaMemorySubsystem(Empty);
     endrule
 
     rule requestActivation(
-        dut.activationRequestValid
+        dut.activationPort.requests.valid
+        && activationPipe.acceptReady
+        && !activationPipe.responseValid
     );
-        let request = dut.activationRequest;
+        let request = dut.activationPort.requests.first;
         Vector#(16, Int#(8)) data =
             replicate(unpack(truncate(pack(request.outer.start))));
         Vector#(16, Bool) mask = replicate(False);
         for (Integer lane = 0; lane < 8; lane = lane + 1) begin
             mask[lane] = True;
         end
-        ActivationResponse response = AquaMemoryReadResponse {
+        activationPipe.accept(AquaMemoryReadResponse {
             tag: request.tag,
             payload: ScratchpadRowPayload { mask: mask, data: data }
-        };
-        dynamicAssert(dut.queuedActivationResponseReady(response),
-                      "same-cycle activation response not ready");
-        dut.putQueuedActivationResponse(response);
+        });
+        dut.activationPort.requests.consume;
         activationRequestsSeen <= activationRequestsSeen + 1;
     endrule
 
     rule requestWeight(
-        dut.weightRequestValid
+        dut.weightPort.requests.valid
         && weightPipe.acceptReady
         && !weightPipe.responseValid
     );
-        let request = dut.weightRequest;
+        let request = dut.weightPort.requests.first;
         Vector#(16, Bit#(8)) data =
             replicate(truncate(pack(request.outer.start)));
         Vector#(16, Bool) mask = replicate(False);
@@ -162,16 +172,16 @@ module mkTbAquaMemorySubsystem(Empty);
             tag: request.tag,
             payload: ScratchpadRowPayload { mask: mask, data: data }
         });
-        dut.consumeWeightRequest;
+        dut.weightPort.requests.consume;
         weightRequestsSeen <= weightRequestsSeen + 1;
     endrule
 
     rule requestBlock(
-        dut.blockShiftRequestValid
+        dut.blockShiftPort.requests.valid
         && blockPipe.acceptReady
         && !blockPipe.responseValid
     );
-        let request = dut.blockShiftRequest;
+        let request = dut.blockShiftPort.requests.first;
         Vector#(16, Bool) mask = replicate(False);
         mask[0] = True;
         mask[1] = True;
@@ -182,68 +192,84 @@ module mkTbAquaMemorySubsystem(Empty);
             tag: request.tag,
             payload: ScratchpadRowPayload { mask: mask, data: data }
         });
-        dut.consumeBlockShiftRequest;
+        dut.blockShiftPort.requests.consume;
         blockRequestsSeen <= blockRequestsSeen + 1;
     endrule
 
     rule requestRow(
-        dut.rowScaleRequestValid
+        dut.rowShiftPort.requests.valid
+        && rowPipe.acceptReady
+        && !rowPipe.responseValid
     );
-        let request = dut.rowScaleRequest;
+        let request = dut.rowShiftPort.requests.first;
         Vector#(16, Bool) mask = replicate(False);
         mask[0] = True;
         mask[1] = True;
         Vector#(16, UInt#(6)) data = replicate(?);
         data[0] = 5;
         data[1] = 11;
-        RowResponse response = AquaMemoryReadResponse {
+        rowPipe.accept(AquaMemoryReadResponse {
             tag: request.tag,
             payload: ScratchpadRowPayload { mask: mask, data: data }
-        };
-        dynamicAssert(dut.queuedRowScaleResponseReady(response),
-                      "same-cycle row response not ready");
-        dut.putQueuedRowScaleResponse(response);
+        });
+        dut.rowShiftPort.requests.consume;
         rowRequestsSeen <= rowRequestsSeen + 1;
+    endrule
+
+    rule respondActivation(
+        activationPipe.responseValid
+        && dut.activationPort.responses.ready(activationPipe.response)
+    );
+        dut.activationPort.responses.put(activationPipe.response);
+        activationPipe.consume;
     endrule
 
     rule respondWeight(
         weightPipe.responseValid
-        && dut.weightResponseReady(weightPipe.response)
+        && dut.weightPort.responses.ready(weightPipe.response)
     );
-        dut.putWeightResponse(weightPipe.response);
+        dut.weightPort.responses.put(weightPipe.response);
         weightPipe.consume;
         weightResponsesSeen <= weightResponsesSeen + 1;
     endrule
 
     rule respondBlock(
         blockPipe.responseValid
-        && dut.blockShiftResponseReady(blockPipe.response)
+        && dut.blockShiftPort.responses.ready(blockPipe.response)
     );
-        dut.putBlockShiftResponse(blockPipe.response);
+        dut.blockShiftPort.responses.put(blockPipe.response);
         blockPipe.consume;
         blockResponsesSeen <= blockResponsesSeen + 1;
     endrule
 
+    rule respondRow(
+        rowPipe.responseValid
+        && dut.rowShiftPort.responses.ready(rowPipe.response)
+    );
+        dut.rowShiftPort.responses.put(rowPipe.response);
+        rowPipe.consume;
+    endrule
 
-    rule acknowledgeOutput(dut.outputRequestValid);
-        let request = dut.outputRequest;
+
+    rule acknowledgeOutput(dut.outputPort.requests.valid);
+        let request = dut.outputPort.requests.first;
         dynamicAssert(request.outputColumn.start == 8 + zeroExtend(outputCount),
                       "subsystem output J mismatch");
         dynamicAssert(request.rawValue == 500 + signExtend(unpack(pack(outputCount))),
                       "subsystem raw output mismatch");
-        dut.consumeOutputRequest;
+        dut.outputPort.requests.consume;
         pendingOutputAck <= tagged Valid request.tag;
         outputCount <= outputCount + 1;
     endrule
 
     rule sendOutputAck(
         isValid(pendingOutputAck)
-        && dut.outputAckReady(AquaMemoryWriteAck {
+        && dut.outputPort.responses.ready(AquaMemoryWriteAck {
             tag: fromMaybe(?, pendingOutputAck),
             accepted: True
         })
     );
-        dut.putOutputAck(AquaMemoryWriteAck {
+        dut.outputPort.responses.put(AquaMemoryWriteAck {
             tag: fromMaybe(?, pendingOutputAck),
             accepted: True
         });
@@ -338,12 +364,12 @@ module mkTbAquaMemorySubsystem(Empty);
                 weightResponsesSeen,
                 weightPipe.responseValid,
                 weightPipe.responseValid
-                    && dut.weightResponseReady(weightPipe.response),
+                    && dut.weightPort.responses.ready(weightPipe.response),
                 blockRequestsSeen,
                 blockResponsesSeen,
                 blockPipe.responseValid,
                 blockPipe.responseValid
-                    && dut.blockShiftResponseReady(blockPipe.response),
+                    && dut.blockShiftPort.responses.ready(blockPipe.response),
                 rowRequestsSeen
             );
             $finish(1);

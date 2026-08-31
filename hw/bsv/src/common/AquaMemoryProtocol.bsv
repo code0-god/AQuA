@@ -1,17 +1,9 @@
-package AquaMemoryTypes;
+package AquaMemoryProtocol;
 
 import AquaLocalAddr::*;
 import AquaTypes::*;
 import AquaWorkTypes::*;
 import Vector::*;
-
-typedef enum {
-    MemoryActivation,
-    MemoryWeightCode,
-    MemoryHp1BlockShift,
-    MemoryHp1RowScale,
-    MemoryRawOutput
-} AquaMemoryKind deriving (Bits, Eq, FShow);
 
 typedef struct {
     MatrixExtent start;
@@ -23,7 +15,6 @@ typedef struct {
     StripeId stripeId;
     ArrayWorkId arrayWorkId;
     KFragmentId fragmentId;
-    AquaMemoryKind kind;
     AquaMemoryTxnId transactionId;
     AquaLocalAddr localAddress;
 } AquaMemoryTag deriving (Bits, Eq, FShow);
@@ -34,6 +25,22 @@ typedef struct {
     LogicalRange outer;
     LogicalRange inner;
 } AquaMemoryReadRequest deriving (Bits, Eq, FShow);
+
+interface ReadRequestSourceIfc;
+    method Bool valid;
+    method AquaMemoryReadRequest first;
+    method Action consume;
+endinterface
+
+interface ReadResponseSinkIfc#(type response_t);
+    method Bool ready(response_t response);
+    method Action put(response_t response);
+endinterface
+
+interface ReadPortIfc#(type response_t);
+    interface ReadRequestSourceIfc requests;
+    interface ReadResponseSinkIfc#(response_t) responses;
+endinterface
 
 typedef struct {
     AquaMemoryTag tag;
@@ -147,6 +154,26 @@ typedef struct {
     AquaMemoryTag tag;
     Bool accepted;
 } AquaMemoryWriteAck deriving (Bits, Eq, FShow);
+
+interface WriteRequestSourceIfc#(numeric type accWidth);
+    method Bool valid;
+    method AquaMemoryWriteRequest#(accWidth) first;
+    method Action consume;
+endinterface
+
+interface WriteResponseSinkIfc;
+    method Bool ready(AquaMemoryWriteAck acknowledgement);
+    method Action put(AquaMemoryWriteAck acknowledgement);
+endinterface
+
+interface WritePortIfc#(numeric type accWidth);
+    interface WriteRequestSourceIfc#(accWidth) requests;
+    interface WriteResponseSinkIfc responses;
+endinterface
+
+function AquaMemoryTxnId memoryTransactionId(MatrixExtent index);
+    return zeroExtend(index);
+endfunction
 
 typedef struct {
     MatmulJobId jobId;

@@ -2,7 +2,7 @@ package TbMetadataResponseMaskMismatch;
 
 import AquaLocalAddr::*;
 import AquaMemorySubsystem::*;
-import AquaMemoryTypes::*;
+import AquaMemoryProtocol::*;
 import AquaTypes::*;
 import AquaWorkTypes::*;
 import Vector::*;
@@ -38,8 +38,14 @@ endfunction
 
 (* synthesize *)
 module mkTbMetadataResponseMaskMismatch(Empty);
-    AquaMemorySubsystemIfc#(16, 2, 16, 16, 8, 8, 6, 8, 32) dut
-        <- mkAquaMemorySubsystem;
+    AquaMemorySubsystemIfc#(
+        16,
+        2, 16,
+        3, 17,
+        16,
+        8, 8, 6,
+        5, 8, 32
+    ) dut <- mkAquaMemorySubsystem;
     Reg#(Bool) started <- mkReg(False);
 
     rule start(!started && dut.loadReady);
@@ -47,8 +53,8 @@ module mkTbMetadataResponseMaskMismatch(Empty);
         started <= True;
     endrule
 
-    rule sendShortBlockMask(dut.blockShiftRequestValid);
-        let request = dut.blockShiftRequest;
+    rule sendShortBlockMask(dut.blockShiftPort.requests.valid);
+        let request = dut.blockShiftPort.requests.first;
         Vector#(16, Bool) mask = replicate(False);
         mask[0] = True;
         mask[1] = True;
@@ -62,7 +68,8 @@ module mkTbMetadataResponseMaskMismatch(Empty);
 
         // Expected assertion for later Makefile registration:
         // metadata response mask does not match requested J count
-        dut.putQueuedBlockShiftResponse(response);
+        dut.blockShiftPort.requests.consume;
+        dut.blockShiftPort.responses.put(response);
     endrule
 endmodule
 
