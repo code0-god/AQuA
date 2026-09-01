@@ -43,6 +43,8 @@ BSV_EXPECT_FAIL_TOPS := \
 	mkTbMatmulStripeGap \
 	mkTbMatmulStripeOverlap \
 	mkTbMatmulStripeOutOfBounds \
+	mkTbMatmulInvalidDescriptor \
+	mkTbMatmulWrongStripeId \
 	mkTbHp1BlockDepthOverflow \
 	mkTbHp1RowDepthOverflow \
 	mkTbActivationLoadDepthOverflow \
@@ -55,7 +57,8 @@ BSV_NO_ASSERT_TEST_TOPS := \
 	mkTbLoadInvalidWorkGate \
 	mkTbStoreInvalidWorkGate \
 	mkTbAccumulatorOverflowGate \
-	mkTbWorkRangeOverflowGate
+	mkTbWorkRangeOverflowGate \
+	mkTbMatmulInvalidInputGate
 
 SYNTH_TOPS := \
 	mkMemorySynthTop \
@@ -100,6 +103,8 @@ bsv-test: | $(BUILD_DIR)/bsc $(BUILD_DIR)/sim $(BUILD_DIR)/info $(BUILD_DIR)/bin
 	    mkTbMatmulStripeGap) expected='stripe publication gap' ;; \
 	    mkTbMatmulStripeOverlap) expected='stripe publication overlap' ;; \
 	    mkTbMatmulStripeOutOfBounds) expected='stripe publication out of bounds' ;; \
+	    mkTbMatmulInvalidDescriptor) expected='invalid matmul descriptor' ;; \
+	    mkTbMatmulWrongStripeId) expected='stripe publication ID mismatch' ;; \
 	    mkTbHp1BlockDepthOverflow) expected='HP1 block metadata out of range' ;; \
 	    mkTbHp1RowDepthOverflow) expected='HP1 row metadata out of range' ;; \
 	    mkTbActivationLoadDepthOverflow) expected='activation local row exceeds configured rows' ;; \
