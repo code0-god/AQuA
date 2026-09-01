@@ -41,6 +41,10 @@ BSV_EXPECT_FAIL_TOPS := \
 	mkTbMatmulStripeGap \
 	mkTbMatmulStripeOverlap \
 	mkTbMatmulStripeOutOfBounds \
+	mkTbActivationLoadDepthOverflow \
+	mkTbWeightLoadDepthOverflow \
+	mkTbActivationResponseMaskMismatch \
+	mkTbWeightResponseMaskMismatch \
 	mkTbMetadataResponseMaskMismatch
 
 SYNTH_TOPS := \
@@ -85,6 +89,10 @@ bsv-test: | $(BUILD_DIR)/bsc $(BUILD_DIR)/sim $(BUILD_DIR)/info $(BUILD_DIR)/bin
 	    mkTbMatmulStripeGap) expected='stripe publication gap' ;; \
 	    mkTbMatmulStripeOverlap) expected='stripe publication overlap' ;; \
 	    mkTbMatmulStripeOutOfBounds) expected='stripe publication out of bounds' ;; \
+	    mkTbActivationLoadDepthOverflow) expected='activation local row exceeds configured rows' ;; \
+	    mkTbWeightLoadDepthOverflow) expected='weight local row exceeds configured rows' ;; \
+	    mkTbActivationResponseMaskMismatch) expected='activation response mask does not match requested K count' ;; \
+	    mkTbWeightResponseMaskMismatch) expected='weight response mask does not match requested K count' ;; \
 	    mkTbMetadataResponseMaskMismatch) expected='metadata response mask does not match requested J count' ;; \
 	    *) echo "missing expected failure text for $$top" >&2; exit 2 ;; \
 	  esac; \

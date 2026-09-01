@@ -105,7 +105,8 @@ Rust는 계속 매크로 K 후보를 선택하고 용량을 계산한다. 이를
 모든 후보를 모든 AQuA 리소스에 대해 검사한다.
 
 명시적인 HP1 메타데이터 용량이 필요한 이유는 `Hp1MetaMem`이
-`WeightSpad`와 물리적으로 분리되어 있기 때문이다. 메타데이터는
+`Scratchpad.bsv`의 weight instance와 물리적으로 분리되어 있기 때문이다.
+메타데이터는
 가중치 코드 저장소의 명시되지 않은 잔여 공간을 사용할 수 없다.
 
 `Hp1MetaMem`의 한 block-scale row는 J 열마다
@@ -231,10 +232,18 @@ LoadStager
 `AquaMemoryTag`는 job, stripe, array-work, fragment, transaction 및
 로컬 주소를 보존한다.
 
+`LoadController`는 요청을 발행하기 전에 activation/weight base와 work count가
+각 메모리의 실제 row depth를 넘지 않는지 검사한다. 따라서 로컬 메모리가
+받을 수 없는 요청이 pending 상태로 들어가 응답을 영구히 막지 않는다.
+
 각 채널은 동시에 하나의 요청만 outstanding일 수 있지만 서로 독립적으로
 진행한다. 요청이 `offered`인 동안에는 응답을 받지 않으며, 프로바이더가
 요청을 소비한 뒤 `pending`이 된 다음 사이클부터 정확한 태그의 응답을
 받는다. 따라서 latency-0 동일 사이클 응답은 계약이 아니다.
+
+activation과 weight 응답의 마스크는 정확히 `fragmentKCount`개의 선행 lane과
+일치해야 한다. 잘못된 data mask는 scratchpad write와 transaction 완료 전에
+거부된다.
 
 block-scale과 row-shift 응답은 각각 J 열별 payload 벡터와 마스크를
 전달한다. 마스크는 정확히 `jCount`개의 선행 lane과 일치해야 하며,

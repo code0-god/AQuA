@@ -46,7 +46,7 @@ function ProviderLoadWork#(16) loadWork(UInt#(3) phase);
 endfunction
 
 module mkTbLoadController(Empty);
-    LoadControllerIfc#(16, 2, 3, 16) dut <- mkLoadController;
+    LoadControllerIfc#(16, 2, 16, 3, 17, 16) dut <- mkLoadController;
 
     Reg#(UInt#(3)) phase <- mkReg(0);
     Reg#(Bool) running <- mkReg(False);

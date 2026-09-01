@@ -131,13 +131,13 @@ function AquaMemoryReadRequest rowShiftRequest(
     };
 endfunction
 
-function Bool metadataMaskMatches(
+function Bool responseMaskMatches(
     Vector#(arrayDim, Bool) mask,
-    ArrayCount jCount
+    ArrayCount count
 );
     Bool valid = True;
     for (Integer lane = 0; lane < valueOf(arrayDim); lane = lane + 1) begin
-        valid = valid && mask[lane] == (fromInteger(lane) < jCount);
+        valid = valid && mask[lane] == (fromInteger(lane) < count);
     end
     return valid;
 endfunction
@@ -145,7 +145,9 @@ endfunction
 interface LoadControllerIfc#(
     numeric type arrayDim,
     numeric type activationBankCount,
+    numeric type activationRowCount,
     numeric type weightBankCount,
+    numeric type weightRowCount,
     numeric type metaEntries
 );
     method Bool scheduleReady;
@@ -156,6 +158,7 @@ interface LoadControllerIfc#(
     interface ReadPortIfc#(AquaMemoryTag) blockShiftPort;
     interface ReadPortIfc#(AquaMemoryTag) rowShiftPort;
 
+    method Bool dataResponseMaskValid(Vector#(arrayDim, Bool) mask);
     method Bool metadataResponseMaskValid(Vector#(arrayDim, Bool) mask);
 
     method Bool completionValid;
@@ -167,7 +170,9 @@ endinterface
 function Action validateProviderLoadWork(
     ProviderLoadWork#(arrayDim) work,
     Integer activationBankCount,
+    Integer activationRowCount,
     Integer weightBankCount,
+    Integer weightRowCount,
     Integer metaEntries
 );
     action
@@ -229,13 +234,13 @@ function Action validateProviderLoadWork(
                       "weight base bank exceeds configured banks");
         dynamicAssert(
             activationLinearEnd / fromInteger(activationBankCount)
-                < fromInteger(2 ** 16),
-            "activation local row range overflow"
+                < fromInteger(activationRowCount),
+            "activation local row exceeds configured rows"
         );
         dynamicAssert(
             weightLinearEnd / fromInteger(weightBankCount)
-                < fromInteger(2 ** 16),
-            "weight local row range overflow"
+                < fromInteger(weightRowCount),
+            "weight local row exceeds configured rows"
         );
         dynamicAssert(work.blockShiftDestination.region == LocalHp1Meta,
                       "block shift has wrong local region");
@@ -255,7 +260,9 @@ endfunction
 module mkLoadController(LoadControllerIfc#(
     arrayDim,
     activationBankCount,
+    activationRowCount,
     weightBankCount,
+    weightRowCount,
     metaEntries
 )) provisos (
     Add#(activationLanePadding, TLog#(arrayDim), 32),
@@ -386,7 +393,9 @@ module mkLoadController(LoadControllerIfc#(
         validateProviderLoadWork(
             work,
             valueOf(activationBankCount),
+            valueOf(activationRowCount),
             valueOf(weightBankCount),
+            valueOf(weightRowCount),
             valueOf(metaEntries)
         );
         active <= tagged Valid work;
@@ -503,9 +512,17 @@ module mkLoadController(LoadControllerIfc#(
         endinterface
     endinterface
 
+    method Bool dataResponseMaskValid(Vector#(arrayDim, Bool) mask);
+        return isValid(active)
+            && responseMaskMatches(
+                mask,
+                fromMaybe(?, active).fragmentKCount
+            );
+    endmethod
+
     method Bool metadataResponseMaskValid(Vector#(arrayDim, Bool) mask);
         return isValid(active)
-            && metadataMaskMatches(mask, fromMaybe(?, active).jCount);
+            && responseMaskMatches(mask, fromMaybe(?, active).jCount);
     endmethod
 
     method Bool completionValid = completions.notEmpty;

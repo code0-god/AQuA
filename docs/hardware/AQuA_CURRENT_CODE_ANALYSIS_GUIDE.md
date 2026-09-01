@@ -1075,6 +1075,10 @@ queued-response API는 없다. output은 typed write request와 ack를 사용한
 `offered request`와 `pending tag`를 가진다. 채널마다 single-outstanding이지만
 서로 독립적으로 진행한다.
 
+schedule 시 activation/weight base에서 마지막 work row까지 계산하고 실제
+`activationRows`/`weightRows` 안에 있는지 확인한다. 인코딩 폭만 맞고 물리
+depth를 넘는 work는 request를 발행하기 전에 거부한다.
+
 ```text
 request offered
 → provider consumes request
@@ -1107,7 +1111,8 @@ reuse key는 여기에 block index와 destination을 더한다. J, block 또는
 1. 해당 response가 outstanding인가?
 2. 전체 tag가 pending tag와 일치하는가?
 3. region/bank/row가 맞는가?
-4. metadata mask가 `jCount`와 일치하는가?
+4. activation/weight mask가 `fragmentKCount`와 일치하는가?
+5. metadata mask가 `jCount`와 일치하는가?
 
 wrong job/stripe/work/fragment/transaction/address response는 write를 만들지 않는다.
 
@@ -1126,6 +1131,10 @@ row shift:   mask + Vector#(arrayDim, UInt#(shiftWidth))
 ```text
 TbHp1MetaMem.bsv
 TbAquaMemorySubsystem.bsv
+TbActivationLoadDepthOverflow.bsv
+TbWeightLoadDepthOverflow.bsv
+TbActivationResponseMaskMismatch.bsv
+TbWeightResponseMaskMismatch.bsv
 TbMetadataResponseMaskMismatch.bsv
 ```
 
@@ -1210,13 +1219,17 @@ mkTbStoreController
 mkTbAquaMemorySubsystem
 ```
 
-expected-failure top 5개:
+expected-failure top 9개:
 
 ```text
 mkTbAccumulatorOverflow
 mkTbMatmulStripeGap
 mkTbMatmulStripeOverlap
 mkTbMatmulStripeOutOfBounds
+mkTbActivationLoadDepthOverflow
+mkTbWeightLoadDepthOverflow
+mkTbActivationResponseMaskMismatch
+mkTbWeightResponseMaskMismatch
 mkTbMetadataResponseMaskMismatch
 ```
 
