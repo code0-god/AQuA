@@ -1,5 +1,6 @@
 package AquaMemorySubsystem;
 
+import Assert::*;
 import AccumulatorMem::*;
 import AquaMemoryProtocol::*;
 import AquaTypes::*;
@@ -113,6 +114,11 @@ module mkAquaMemorySubsystem(
     Add#(blockMetaPadding, TLog#(TAdd#(blockMetaEntries, 1)), 32),
     Add#(rowMetaPadding, TLog#(TAdd#(rowMetaEntries, 1)), 32)
 );
+    staticAssert(
+        valueOf(accumulatorBanks) == valueOf(arrayDim),
+        "accumulator bank count must equal array dimension"
+    );
+
     LoadControllerIfc#(
         arrayDim,
         activationBanks,

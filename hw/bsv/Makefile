@@ -31,6 +31,7 @@ BSV_TEST_TOPS := \
 	mkTbLocalAddr \
 	mkTbScratchpadBank \
 	mkTbAccumulatorMem \
+	mkTbAccumulatorBankGeometry \
 	mkTbWorkScheduler \
 	mkTbMatmulScheduler \
 	mkTbMockAquaProvider \
@@ -40,6 +41,7 @@ BSV_TEST_TOPS := \
 
 BSV_EXPECT_FAIL_TOPS := \
 	mkTbAccumulatorOverflow \
+	mkTbInvalidAccumulatorBankGeometry \
 	mkTbMatmulStripeGap \
 	mkTbMatmulStripeOverlap \
 	mkTbMatmulStripeOutOfBounds \
@@ -94,6 +96,20 @@ bsv-test: | $(BUILD_DIR)/bsc $(BUILD_DIR)/sim $(BUILD_DIR)/info $(BUILD_DIR)/bin
 	for top in $(BSV_EXPECT_FAIL_TOPS); do \
 	  package="$${top#mk}"; \
 	  echo "[BSC] compile expected-failure $$top"; \
+	  if [[ "$$top" == mkTbInvalidAccumulatorBankGeometry ]]; then \
+	    if output="$$($(BSC) -u -sim $(BSC_COMMON) -g "$$top" "tb/$$package.bsv" 2>&1)"; then \
+	      printf '%s\n' "$$output"; \
+	      echo "$$top unexpectedly elaborated" >&2; \
+	      exit 1; \
+	    fi; \
+	    printf '%s\n' "$$output"; \
+	    if [[ "$$output" != *"count must equal array dimension"* ]]; then \
+	      echo "$$top failed for the wrong reason" >&2; \
+	      exit 1; \
+	    fi; \
+	    echo "PASS expected elaboration failure $$top"; \
+	    continue; \
+	  fi; \
 	  $(BSC) -u -sim $(BSC_COMMON) -g "$$top" "tb/$$package.bsv"; \
 	  $(BSC) -sim $(BSC_COMMON) -e "$$top" \
 	    -o "$(BUILD_DIR)/bin/$$package"; \

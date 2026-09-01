@@ -11,7 +11,7 @@ module mkMemorySubsystemSynthTop(Empty);
         24, 12,
         8, 8,
         5, 4,
-        8, 12, 32
+        16, 12, 32
     ) subsystem <- mkAquaMemorySubsystem;
 endmodule
 

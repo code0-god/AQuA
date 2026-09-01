@@ -75,7 +75,7 @@ module mkTbAquaMemorySubsystem(Empty);
         16, 16,
         8, 8,
         6, 6,
-        5, 8, 32
+        16, 8, 32
     ) dut <- mkAquaMemorySubsystem;
 
     MockProviderPipeIfc#(ActivationResponse) activationPipe
