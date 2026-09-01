@@ -43,6 +43,8 @@ BSV_EXPECT_FAIL_TOPS := \
 	mkTbMatmulStripeGap \
 	mkTbMatmulStripeOverlap \
 	mkTbMatmulStripeOutOfBounds \
+	mkTbHp1BlockDepthOverflow \
+	mkTbHp1RowDepthOverflow \
 	mkTbActivationLoadDepthOverflow \
 	mkTbWeightLoadDepthOverflow \
 	mkTbActivationResponseMaskMismatch \
@@ -98,6 +100,8 @@ bsv-test: | $(BUILD_DIR)/bsc $(BUILD_DIR)/sim $(BUILD_DIR)/info $(BUILD_DIR)/bin
 	    mkTbMatmulStripeGap) expected='stripe publication gap' ;; \
 	    mkTbMatmulStripeOverlap) expected='stripe publication overlap' ;; \
 	    mkTbMatmulStripeOutOfBounds) expected='stripe publication out of bounds' ;; \
+	    mkTbHp1BlockDepthOverflow) expected='HP1 block metadata out of range' ;; \
+	    mkTbHp1RowDepthOverflow) expected='HP1 row metadata out of range' ;; \
 	    mkTbActivationLoadDepthOverflow) expected='activation local row exceeds configured rows' ;; \
 	    mkTbWeightLoadDepthOverflow) expected='weight local row exceeds configured rows' ;; \
 	    mkTbActivationResponseMaskMismatch) expected='activation response mask does not match requested K count' ;; \

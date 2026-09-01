@@ -1,6 +1,13 @@
 use super::*;
 use aqua_protocol::AQUA_BLOCK_SIZE;
 
+const DEFAULT_HP1_META: Hp1MetaGeometry = Hp1MetaGeometry {
+    block_entries: 4096,
+    row_entries: 4096,
+    left_shift_bits: 16,
+    row_right_shift_bits: 16,
+};
+
 fn complete_builder(array_dim: usize) -> AquaHardwareGeometryBuilder {
     AquaHardwareGeometry::builder(array_dim)
         .activation_spad(4, 1024)
@@ -8,7 +15,7 @@ fn complete_builder(array_dim: usize) -> AquaHardwareGeometryBuilder {
         .accumulator(array_dim, 512)
         .exsia_slots(2, 1 << 20)
         .element_bits(8, 8, 32)
-        .hp1_metadata(1 << 20, 16, 16)
+        .hp1_metadata(DEFAULT_HP1_META)
         .exsia_layout(32, 16, 32)
 }
 
@@ -69,7 +76,7 @@ fn rejects_zero_memory_geometry() {
         .accumulator(16, 512)
         .exsia_slots(2, 1 << 20)
         .element_bits(8, 8, 32)
-        .hp1_metadata(1 << 20, 16, 16)
+        .hp1_metadata(DEFAULT_HP1_META)
         .exsia_layout(32, 16, 32);
 
     // When
@@ -93,7 +100,7 @@ fn rejects_incompatible_accumulator_banks() {
         .accumulator(3, 512)
         .exsia_slots(2, 1 << 20)
         .element_bits(8, 8, 32)
-        .hp1_metadata(1 << 20, 16, 16)
+        .hp1_metadata(DEFAULT_HP1_META)
         .exsia_layout(32, 16, 32);
 
     // When
@@ -107,6 +114,49 @@ fn rejects_incompatible_accumulator_banks() {
             banks: 3,
         }
     ));
+}
+
+#[test]
+fn block_shift_width_and_row_shift_width_can_differ() {
+    // Given
+    let metadata = Hp1MetaGeometry {
+        block_entries: 8,
+        row_entries: 4,
+        left_shift_bits: 5,
+        row_right_shift_bits: 4,
+    };
+
+    // When
+    let geometry = complete_builder(16)
+        .hp1_metadata(metadata)
+        .build()
+        .expect("asymmetric HP1 metadata geometry");
+
+    // Then
+    assert_eq!(geometry.hp1_block_metadata_entries(), 8);
+    assert_eq!(geometry.hp1_row_metadata_entries(), 4);
+    assert_eq!(geometry.hp1_left_shift_bits(), 5);
+    assert_eq!(geometry.hp1_row_right_shift_bits(), 4);
+}
+
+#[test]
+fn derives_hp1_metadata_capacity_from_encoded_geometry() {
+    // Given
+    let metadata = Hp1MetaGeometry {
+        block_entries: 8,
+        row_entries: 4,
+        left_shift_bits: 5,
+        row_right_shift_bits: 4,
+    };
+
+    // When
+    let geometry = complete_builder(16)
+        .hp1_metadata(metadata)
+        .build()
+        .expect("HP1 metadata geometry");
+
+    // Then
+    assert_eq!(geometry.hp1_metadata_capacity_bytes(), 128);
 }
 
 #[test]
@@ -158,7 +208,12 @@ fn rejects_geometry_capacity_overflow() {
         .accumulator(32, 1)
         .exsia_slots(1, 1)
         .element_bits(8, 8, 32)
-        .hp1_metadata(1, 16, 16)
+        .hp1_metadata(Hp1MetaGeometry {
+            block_entries: 1,
+            row_entries: 1,
+            left_shift_bits: 16,
+            row_right_shift_bits: 16,
+        })
         .exsia_layout(32, 16, 32);
 
     // When

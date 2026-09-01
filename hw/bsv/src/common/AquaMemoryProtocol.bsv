@@ -72,32 +72,32 @@ typedef AquaMemoryReadResponse#(
 
 typedef ScratchpadRowPayload#(
     arrayDim,
-    Hp1BlockScale#(shiftWidth)
+    Hp1BlockScale#(blockShiftWidth)
 ) Hp1BlockScaleRow#(
     numeric type arrayDim,
-    numeric type shiftWidth
+    numeric type blockShiftWidth
 );
 
 typedef ScratchpadRowPayload#(
     arrayDim,
-    UInt#(shiftWidth)
+    UInt#(rowShiftWidth)
 ) Hp1RowShiftRow#(
     numeric type arrayDim,
-    numeric type shiftWidth
+    numeric type rowShiftWidth
 );
 
 typedef AquaMemoryReadResponse#(
-    Hp1BlockScaleRow#(arrayDim, shiftWidth)
+    Hp1BlockScaleRow#(arrayDim, blockShiftWidth)
 ) BlockShiftMemoryResponse#(
     numeric type arrayDim,
-    numeric type shiftWidth
+    numeric type blockShiftWidth
 );
 
 typedef AquaMemoryReadResponse#(
-    Hp1RowShiftRow#(arrayDim, shiftWidth)
+    Hp1RowShiftRow#(arrayDim, rowShiftWidth)
 ) RowScaleMemoryResponse#(
     numeric type arrayDim,
-    numeric type shiftWidth
+    numeric type rowShiftWidth
 );
 
 typedef struct {

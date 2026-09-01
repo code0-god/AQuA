@@ -62,6 +62,8 @@ impl AquaTileSelector {
             k_tile_elements: usage.k_tile_elements,
             activation_spad_rows: usage.activation_spad_rows,
             weight_spad_rows: usage.weight_spad_rows,
+            hp1_block_metadata_entries: usage.hp1_block_metadata_entries,
+            hp1_row_metadata_entries: usage.hp1_row_metadata_entries,
             hp1_metadata_bytes: usage.hp1_metadata_bytes,
             accumulator_rows_per_bank: usage.accumulator_rows_per_bank,
             exsia_slot_bytes: usage.exsia_slot_bytes,

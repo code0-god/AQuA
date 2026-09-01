@@ -85,6 +85,8 @@ pub struct AquaTilePlan {
     k_tile_elements: usize,
     activation_spad_rows: usize,
     weight_spad_rows: usize,
+    hp1_block_metadata_entries: usize,
+    hp1_row_metadata_entries: usize,
     hp1_metadata_bytes: usize,
     accumulator_rows_per_bank: usize,
     exsia_slot_bytes: usize,
@@ -133,6 +135,14 @@ impl AquaTilePlan {
 
     pub const fn weight_spad_rows(self) -> usize {
         self.weight_spad_rows
+    }
+
+    pub const fn hp1_block_metadata_entries(self) -> usize {
+        self.hp1_block_metadata_entries
+    }
+
+    pub const fn hp1_row_metadata_entries(self) -> usize {
+        self.hp1_row_metadata_entries
     }
 
     pub const fn hp1_metadata_bytes(self) -> usize {

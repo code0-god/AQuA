@@ -42,8 +42,9 @@ module mkTbWeightLoadDepthOverflow(Empty);
         16,
         2, 16,
         3, 17,
-        16,
-        8, 8, 6,
+        16, 16,
+        8, 8,
+        6, 6,
         5, 8, 32
     ) dut <- mkAquaMemorySubsystem;
 

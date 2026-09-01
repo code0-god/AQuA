@@ -17,10 +17,12 @@ interface AquaMemorySubsystemIfc#(
     numeric type activationRows,
     numeric type weightBanks,
     numeric type weightRows,
-    numeric type metaEntries,
+    numeric type blockMetaEntries,
+    numeric type rowMetaEntries,
     numeric type activationWidth,
     numeric type weightWidth,
-    numeric type shiftWidth,
+    numeric type blockShiftWidth,
+    numeric type rowShiftWidth,
     numeric type accumulatorBanks,
     numeric type accumulatorRows,
     numeric type accumulatorWidth
@@ -35,10 +37,10 @@ interface AquaMemorySubsystemIfc#(
         WeightMemoryResponse#(arrayDim, weightWidth)
     ) weightPort;
     interface ReadPortIfc#(
-        BlockShiftMemoryResponse#(arrayDim, shiftWidth)
+        BlockShiftMemoryResponse#(arrayDim, blockShiftWidth)
     ) blockShiftPort;
     interface ReadPortIfc#(
-        RowScaleMemoryResponse#(arrayDim, shiftWidth)
+        RowScaleMemoryResponse#(arrayDim, rowShiftWidth)
     ) rowShiftPort;
 
     method Bool loadCompletionValid;
@@ -68,7 +70,13 @@ interface AquaMemorySubsystemIfc#(
             Bit#(weightWidth)
         )
     ) weightBanks;
-    interface Hp1MetaMemIfc#(metaEntries, arrayDim, shiftWidth) hp1Meta;
+    interface Hp1MetaMemIfc#(
+        blockMetaEntries,
+        rowMetaEntries,
+        arrayDim,
+        blockShiftWidth,
+        rowShiftWidth
+    ) hp1Meta;
     interface AccumulatorMemIfc#(
         accumulatorBanks,
         accumulatorRows,
@@ -83,10 +91,12 @@ module mkAquaMemorySubsystem(
         activationRows,
         weightBanks,
         weightRows,
-        metaEntries,
+        blockMetaEntries,
+        rowMetaEntries,
         activationWidth,
         weightWidth,
-        shiftWidth,
+        blockShiftWidth,
+        rowShiftWidth,
         accumulatorBanks,
         accumulatorRows,
         accumulatorWidth
@@ -100,7 +110,8 @@ module mkAquaMemorySubsystem(
     Add#(activationRowPadding, TLog#(TAdd#(activationRows, 1)), 32),
     Add#(weightBankPadding, TLog#(weightBanks), 32),
     Add#(weightRowPadding, TLog#(TAdd#(weightRows, 1)), 32),
-    Add#(metaPadding, TLog#(TAdd#(metaEntries, 1)), 32)
+    Add#(blockMetaPadding, TLog#(TAdd#(blockMetaEntries, 1)), 32),
+    Add#(rowMetaPadding, TLog#(TAdd#(rowMetaEntries, 1)), 32)
 );
     LoadControllerIfc#(
         arrayDim,
@@ -108,7 +119,8 @@ module mkAquaMemorySubsystem(
         activationRows,
         weightBanks,
         weightRows,
-        metaEntries
+        blockMetaEntries,
+        rowMetaEntries
     ) load <- mkLoadController;
     LoadStagerIfc#(
         arrayDim,
@@ -116,10 +128,12 @@ module mkAquaMemorySubsystem(
         activationRows,
         weightBanks,
         weightRows,
-        metaEntries,
+        blockMetaEntries,
+        rowMetaEntries,
         activationWidth,
         weightWidth,
-        shiftWidth
+        blockShiftWidth,
+        rowShiftWidth
     ) staging <- mkLoadStager(load);
     AccumulatorMemIfc#(
         accumulatorBanks,

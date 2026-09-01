@@ -5,47 +5,63 @@ import AquaTypes::*;
 import RegFile::*;
 import Vector::*;
 
-typedef Bit#(TLog#(TAdd#(entries, 1))) Hp1MetaAddr#(numeric type entries);
+typedef Bit#(TLog#(TAdd#(blockEntries, 1))) Hp1BlockMetaAddr#(
+    numeric type blockEntries
+);
+typedef Bit#(TLog#(TAdd#(rowEntries, 1))) Hp1RowMetaAddr#(
+    numeric type rowEntries
+);
 
 interface Hp1MetaMemIfc#(
-    numeric type entries,
+    numeric type blockEntries,
+    numeric type rowEntries,
     numeric type lanes,
-    numeric type shiftWidth
+    numeric type blockShiftWidth,
+    numeric type rowShiftWidth
 );
     method Action writeBlockScales(
-        Hp1MetaAddr#(entries) address,
+        Hp1BlockMetaAddr#(blockEntries) address,
         Vector#(lanes, Bool) mask,
-        Vector#(lanes, Hp1BlockScale#(shiftWidth)) scales
+        Vector#(lanes, Hp1BlockScale#(blockShiftWidth)) scales
     );
-    method Vector#(lanes, Hp1BlockScale#(shiftWidth)) readBlockScales(
-        Hp1MetaAddr#(entries) address
+    method Vector#(lanes, Hp1BlockScale#(blockShiftWidth)) readBlockScales(
+        Hp1BlockMetaAddr#(blockEntries) address
     );
     method Action writeRowShifts(
-        Hp1MetaAddr#(entries) address,
+        Hp1RowMetaAddr#(rowEntries) address,
         Vector#(lanes, Bool) mask,
-        Vector#(lanes, UInt#(shiftWidth)) shifts
+        Vector#(lanes, UInt#(rowShiftWidth)) shifts
     );
-    method Vector#(lanes, UInt#(shiftWidth)) readRowShifts(
-        Hp1MetaAddr#(entries) address
+    method Vector#(lanes, UInt#(rowShiftWidth)) readRowShifts(
+        Hp1RowMetaAddr#(rowEntries) address
     );
 endinterface
 
-module mkHp1MetaMem(Hp1MetaMemIfc#(entries, lanes, shiftWidth));
+module mkHp1MetaMem(Hp1MetaMemIfc#(
+    blockEntries,
+    rowEntries,
+    lanes,
+    blockShiftWidth,
+    rowShiftWidth
+));
     Vector#(
         lanes,
-        RegFile#(Hp1MetaAddr#(entries), Hp1BlockScale#(shiftWidth))
+        RegFile#(
+            Hp1BlockMetaAddr#(blockEntries),
+            Hp1BlockScale#(blockShiftWidth)
+        )
     ) blockScales <- replicateM(mkRegFileFull);
     Vector#(
         lanes,
-        RegFile#(Hp1MetaAddr#(entries), UInt#(shiftWidth))
+        RegFile#(Hp1RowMetaAddr#(rowEntries), UInt#(rowShiftWidth))
     ) rowShifts <- replicateM(mkRegFileFull);
 
     method Action writeBlockScales(
-        Hp1MetaAddr#(entries) address,
+        Hp1BlockMetaAddr#(blockEntries) address,
         Vector#(lanes, Bool) mask,
-        Vector#(lanes, Hp1BlockScale#(shiftWidth)) scales
+        Vector#(lanes, Hp1BlockScale#(blockShiftWidth)) scales
     );
-        dynamicAssert(address < fromInteger(valueOf(entries)),
+        dynamicAssert(address < fromInteger(valueOf(blockEntries)),
                       "HP1 block metadata out of range");
         for (Integer lane = 0; lane < valueOf(lanes); lane = lane + 1) begin
             if (mask[lane]) begin
@@ -54,14 +70,17 @@ module mkHp1MetaMem(Hp1MetaMemIfc#(entries, lanes, shiftWidth));
         end
     endmethod
 
-    method Vector#(lanes, Hp1BlockScale#(shiftWidth)) readBlockScales(
-        Hp1MetaAddr#(entries) address
+    method Vector#(lanes, Hp1BlockScale#(blockShiftWidth)) readBlockScales(
+        Hp1BlockMetaAddr#(blockEntries) address
     );
-        if (address >= fromInteger(valueOf(entries))) begin
+        if (address >= fromInteger(valueOf(blockEntries))) begin
             return error("HP1 block metadata out of range");
         end
         else begin
-            Vector#(lanes, Hp1BlockScale#(shiftWidth)) scales = replicate(?);
+            Vector#(
+                lanes,
+                Hp1BlockScale#(blockShiftWidth)
+            ) scales = replicate(?);
             for (Integer lane = 0; lane < valueOf(lanes); lane = lane + 1) begin
                 scales[lane] = blockScales[lane].sub(address);
             end
@@ -70,11 +89,11 @@ module mkHp1MetaMem(Hp1MetaMemIfc#(entries, lanes, shiftWidth));
     endmethod
 
     method Action writeRowShifts(
-        Hp1MetaAddr#(entries) address,
+        Hp1RowMetaAddr#(rowEntries) address,
         Vector#(lanes, Bool) mask,
-        Vector#(lanes, UInt#(shiftWidth)) shifts
+        Vector#(lanes, UInt#(rowShiftWidth)) shifts
     );
-        dynamicAssert(address < fromInteger(valueOf(entries)),
+        dynamicAssert(address < fromInteger(valueOf(rowEntries)),
                       "HP1 row metadata out of range");
         for (Integer lane = 0; lane < valueOf(lanes); lane = lane + 1) begin
             if (mask[lane]) begin
@@ -83,14 +102,14 @@ module mkHp1MetaMem(Hp1MetaMemIfc#(entries, lanes, shiftWidth));
         end
     endmethod
 
-    method Vector#(lanes, UInt#(shiftWidth)) readRowShifts(
-        Hp1MetaAddr#(entries) address
+    method Vector#(lanes, UInt#(rowShiftWidth)) readRowShifts(
+        Hp1RowMetaAddr#(rowEntries) address
     );
-        if (address >= fromInteger(valueOf(entries))) begin
+        if (address >= fromInteger(valueOf(rowEntries))) begin
             return error("HP1 row metadata out of range");
         end
         else begin
-            Vector#(lanes, UInt#(shiftWidth)) shifts = replicate(?);
+            Vector#(lanes, UInt#(rowShiftWidth)) shifts = replicate(?);
             for (Integer lane = 0; lane < valueOf(lanes); lane = lane + 1) begin
                 shifts[lane] = rowShifts[lane].sub(address);
             end
