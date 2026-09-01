@@ -1,23 +1,23 @@
-package TbMatmulInvalidDescriptor;
+package TbMatmulInvalidMacroKZero;
 
 import AquaTypes::*;
 import AquaWorkTypes::*;
 import MatmulScheduler::*;
 
 (* synthesize *)
-module mkTbMatmulInvalidDescriptor(Empty);
+module mkTbMatmulInvalidMacroKZero(Empty);
     MatmulSchedulerIfc#(16) dut <- mkMatmulScheduler;
 
     rule start(dut.startReady);
         dut.start(AquaMatmulDescriptor {
             jobId: 1,
-            mode: AsyncStripes,
-            m: 0,
-            n: 16,
+            mode: FullMatrix,
+            m: 1,
+            n: 1,
             k: 32,
-            stripeRows: 16,
-            macroNTileColumns: 16,
-            macroKTileElements: 32,
+            stripeRows: 1,
+            macroNTileColumns: 1,
+            macroKTileElements: 0,
             activationTensor: 1,
             weightTensor: 2,
             outputTensor: 3,

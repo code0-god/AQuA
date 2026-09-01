@@ -40,6 +40,7 @@ endfunction
 
 typedef struct {
     MatrixExtent macroNStart;
+    MatrixExtent macroKStart;
     MatrixExtent iStart;
     MatrixExtent jStart;
 } WorkPosition deriving (Bits, Eq, FShow);
@@ -48,15 +49,38 @@ function MatrixExtent stripeRowEnd(ActivationStripe stripe);
     return stripe.rowBegin + stripe.rowCount;
 endfunction
 
+function MatrixExtent macroNCount(
+    AquaMatmulDescriptor descriptor,
+    MatrixExtent macroNStart
+);
+    return min(
+        descriptor.macroNTileColumns,
+        descriptor.n - macroNStart
+    );
+endfunction
+
 function MatrixExtent macroNEnd(
     AquaMatmulDescriptor descriptor,
     MatrixExtent macroNStart
 );
-    MatrixExtent macroNCount = min(
-        descriptor.macroNTileColumns,
-        descriptor.n - macroNStart
+    return macroNStart + macroNCount(descriptor, macroNStart);
+endfunction
+
+function MatrixExtent macroKCount(
+    AquaMatmulDescriptor descriptor,
+    MatrixExtent macroKStart
+);
+    return min(
+        descriptor.macroKTileElements,
+        descriptor.k - macroKStart
     );
-    return macroNStart + macroNCount;
+endfunction
+
+function MatrixExtent macroKEnd(
+    AquaMatmulDescriptor descriptor,
+    MatrixExtent macroKStart
+);
+    return macroKStart + macroKCount(descriptor, macroKStart);
 endfunction
 
 
@@ -74,6 +98,8 @@ function ArrayWork#(arrayDim) makeArrayWork(
     // 마지막 N macro tile이 matrix N 경계를 넘지 않도록 실제 column 수를 제한한다.
     MatrixExtent macroTileEnd =
         macroNEnd(descriptor, position.macroNStart);
+    MatrixExtent currentMacroNCount =
+        macroNCount(descriptor, position.macroNStart);
 
     // 이번 physical array work가 처리할 실제 M row 수.
     MatrixExtent iCount = min(
@@ -91,6 +117,10 @@ function ArrayWork#(arrayDim) makeArrayWork(
         jobId: descriptor.jobId,
         stripeId: stripe.stripeId,
 
+        stripeRowBegin: stripe.rowBegin,
+        macroNStart: position.macroNStart,
+        macroNCount: currentMacroNCount,
+
         // 이번 array work가 시작하는 global M/N 좌표.
         iStart: position.iStart,
         jStart: position.jStart,
@@ -99,9 +129,8 @@ function ArrayWork#(arrayDim) makeArrayWork(
         iCount: truncate(iCount),
         jCount: truncate(jCount),
 
-        // AquaLoopMatmul이 아직 없으므로 현재는 logical K 전체를 하나의 range로 사용한다.
-        kTileStart: 0,
-        kTileCount: descriptor.k
+        kTileStart: position.macroKStart,
+        kTileCount: macroKCount(descriptor, position.macroKStart)
     };
 
 endfunction
@@ -116,6 +145,8 @@ function Maybe#(WorkPosition) nextWorkPosition(
     MatrixExtent stripeEnd = stripeRowEnd(stripe);
     MatrixExtent macroTileEnd =
         macroNEnd(descriptor, current.macroNStart);
+    MatrixExtent currentMacroKEnd =
+        macroKEnd(descriptor, current.macroKStart);
     MatrixExtent nextJ =
         current.jStart + zeroExtend(work.jCount);
     MatrixExtent nextI =
@@ -124,6 +155,7 @@ function Maybe#(WorkPosition) nextWorkPosition(
     if (nextJ < macroTileEnd) begin
         return tagged Valid WorkPosition {
             macroNStart: current.macroNStart,
+            macroKStart: current.macroKStart,
             iStart: current.iStart,
             jStart: nextJ
         };
@@ -131,13 +163,23 @@ function Maybe#(WorkPosition) nextWorkPosition(
     else if (nextI < stripeEnd) begin
         return tagged Valid WorkPosition {
             macroNStart: current.macroNStart,
+            macroKStart: current.macroKStart,
             iStart: nextI,
+            jStart: current.macroNStart
+        };
+    end
+    else if (currentMacroKEnd < descriptor.k) begin
+        return tagged Valid WorkPosition {
+            macroNStart: current.macroNStart,
+            macroKStart: currentMacroKEnd,
+            iStart: stripe.rowBegin,
             jStart: current.macroNStart
         };
     end
     else if (macroTileEnd < descriptor.n) begin
         return tagged Valid WorkPosition {
             macroNStart: macroTileEnd,
+            macroKStart: 0,
             iStart: stripe.rowBegin,
             jStart: macroTileEnd
         };
@@ -155,7 +197,9 @@ function Bool validDescriptor(AquaMatmulDescriptor descriptor);
         && descriptor.stripeRows > 0
         && descriptor.stripeRows <= descriptor.m
         && descriptor.macroNTileColumns > 0
-        && descriptor.macroNTileColumns <= descriptor.n;
+        && descriptor.macroNTileColumns <= descriptor.n
+        && descriptor.macroKTileElements > 0
+        && descriptor.macroKTileElements <= descriptor.k;
 endfunction
 
 function Bool validPublishedStripe(
@@ -206,6 +250,7 @@ module mkMatmulScheduler(MatmulSchedulerIfc#(arrayDim));
         <- mkReg(tagged Invalid);
     Reg#(WorkPosition) workPosition <- mkReg(WorkPosition {
         macroNStart: 0,
+        macroKStart: 0,
         iStart: 0,
         jStart: 0
     });
@@ -228,6 +273,14 @@ module mkMatmulScheduler(MatmulSchedulerIfc#(arrayDim));
             && !completions.notEmpty
         );
         Bool valid = validDescriptor(descriptor);
+        dynamicAssert(
+            descriptor.macroKTileElements > 0,
+            "macro K tile must be nonempty"
+        );
+        dynamicAssert(
+            descriptor.macroKTileElements <= descriptor.k,
+            "macro K tile exceeds logical K"
+        );
         dynamicAssert(valid, "invalid matmul descriptor");
 
         if (valid) begin
@@ -236,6 +289,7 @@ module mkMatmulScheduler(MatmulSchedulerIfc#(arrayDim));
             nextStripeId <= 0;
             workPosition <= WorkPosition {
                 macroNStart: 0,
+                macroKStart: 0,
                 iStart: 0,
                 jStart: 0
             };
@@ -317,6 +371,7 @@ module mkMatmulScheduler(MatmulSchedulerIfc#(arrayDim));
                 activeStripe <= tagged Valid stripe;
                 workPosition <= WorkPosition {
                     macroNStart: 0,
+                    macroKStart: 0,
                     iStart: stripe.rowBegin,
                     jStart: 0
                 };
@@ -387,6 +442,7 @@ module mkMatmulScheduler(MatmulSchedulerIfc#(arrayDim));
                     stripeLookahead <= following;
                     workPosition <= WorkPosition {
                         macroNStart: 0,
+                        macroKStart: 0,
                         iStart: promoted.rowBegin,
                         jStart: 0
                     };
@@ -403,6 +459,7 @@ module mkMatmulScheduler(MatmulSchedulerIfc#(arrayDim));
                     stripeLookahead <= tagged Invalid;
                     workPosition <= WorkPosition {
                         macroNStart: 0,
+                        macroKStart: 0,
                         iStart: promoted.rowBegin,
                         jStart: 0
                     };
@@ -522,39 +579,10 @@ endmodule
 // 지원하는 DIM 16/32/64와 0..64 범위를 모두 표현할 수 있다.
 //
 //
-// Current K behavior
-// ------------------
+// macro-K behavior
+// ----------------
 //
-// 현재 makeArrayWork()는:
-//
-//     kTileStart = 0
-//     kTileCount = descriptor.k
-//
-// 로 logical K 전체를 ArrayWork의 K range로 전달한다.
-//
-// 이 full-K range는 이후 WorkScheduler가:
-//
-//     array dimension
-//     AQuA block boundary = 32
-//
-// 를 기준으로 실제 KFragment들로 다시 나눈다.
-//
-// 즉 현재 단계에서는:
-//
-//     ArrayWork
-//         K = full logical K
-//             ↓
-//     WorkScheduler
-//             ↓
-//         KFragment
-//
-// 구조다.
-//
-// 향후 AquaLoopMatmul이 구현되면:
-//
-//     macroKStart
-//     macroKCount
-//
-// 단위로 ArrayWork의 kTileStart/kTileCount를 공급하도록 변경된다.
+// kTileStart와 kTileCount는 현재 macro-K tile의 실제 logical K 범위다.
+// WorkScheduler는 이 범위를 DIM 및 AQuA block 경계로 다시 분할한다.
 
 endpackage

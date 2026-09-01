@@ -34,6 +34,7 @@ BSV_TEST_TOPS := \
 	mkTbAccumulatorBankGeometry \
 	mkTbWorkScheduler \
 	mkTbMatmulScheduler \
+	mkTbMatmulMacroK \
 	mkTbMockAquaProvider \
 	mkTbLoadController \
 	mkTbStoreController \
@@ -46,6 +47,8 @@ BSV_EXPECT_FAIL_TOPS := \
 	mkTbMatmulStripeOverlap \
 	mkTbMatmulStripeOutOfBounds \
 	mkTbMatmulInvalidDescriptor \
+	mkTbMatmulInvalidMacroKZero \
+	mkTbMatmulInvalidMacroKLarge \
 	mkTbMatmulWrongStripeId \
 	mkTbHp1BlockDepthOverflow \
 	mkTbHp1RowDepthOverflow \
@@ -120,6 +123,8 @@ bsv-test: | $(BUILD_DIR)/bsc $(BUILD_DIR)/sim $(BUILD_DIR)/info $(BUILD_DIR)/bin
 	    mkTbMatmulStripeOverlap) expected='stripe publication overlap' ;; \
 	    mkTbMatmulStripeOutOfBounds) expected='stripe publication out of bounds' ;; \
 	    mkTbMatmulInvalidDescriptor) expected='invalid matmul descriptor' ;; \
+	    mkTbMatmulInvalidMacroKZero) expected='macro K tile must be nonempty' ;; \
+	    mkTbMatmulInvalidMacroKLarge) expected='macro K tile exceeds logical K' ;; \
 	    mkTbMatmulWrongStripeId) expected='stripe publication ID mismatch' ;; \
 	    mkTbHp1BlockDepthOverflow) expected='HP1 block metadata out of range' ;; \
 	    mkTbHp1RowDepthOverflow) expected='HP1 row metadata out of range' ;; \

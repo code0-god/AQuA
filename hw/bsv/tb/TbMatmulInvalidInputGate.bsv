@@ -13,6 +13,7 @@ function AquaMatmulDescriptor validDescriptor;
         k: 32,
         stripeRows: 16,
         macroNTileColumns: 16,
+        macroKTileElements: 32,
         activationTensor: 1,
         weightTensor: 2,
         outputTensor: 3,
@@ -29,6 +30,41 @@ function AquaMatmulDescriptor invalidDescriptor;
         k: 32,
         stripeRows: 16,
         macroNTileColumns: 16,
+        macroKTileElements: 32,
+        activationTensor: 1,
+        weightTensor: 2,
+        outputTensor: 3,
+        jobContext: 4
+    };
+endfunction
+
+function AquaMatmulDescriptor invalidMacroKZeroDescriptor;
+    return AquaMatmulDescriptor {
+        jobId: 1,
+        mode: AsyncStripes,
+        m: 24,
+        n: 16,
+        k: 32,
+        stripeRows: 16,
+        macroNTileColumns: 16,
+        macroKTileElements: 0,
+        activationTensor: 1,
+        weightTensor: 2,
+        outputTensor: 3,
+        jobContext: 4
+    };
+endfunction
+
+function AquaMatmulDescriptor invalidMacroKLargeDescriptor;
+    return AquaMatmulDescriptor {
+        jobId: 1,
+        mode: AsyncStripes,
+        m: 24,
+        n: 16,
+        k: 32,
+        stripeRows: 16,
+        macroNTileColumns: 16,
+        macroKTileElements: 33,
         activationTensor: 1,
         weightTensor: 2,
         outputTensor: 3,
@@ -85,11 +121,57 @@ module mkTbMatmulInvalidInputGate(Empty);
             && !descriptorDut.lookaheadValid
             && !descriptorDut.completionValid
         ) begin
-            descriptorDone <= True;
             descriptorStep <= 2;
         end
         else begin
             $display("FAIL invalid descriptor changed scheduler state");
+            $finish(1);
+        end
+    endrule
+
+    rule sendInvalidMacroKZero(
+        descriptorStep == 2 && descriptorDut.startReady
+    );
+        descriptorDut.start(invalidMacroKZeroDescriptor);
+        descriptorStep <= 3;
+    endrule
+
+    rule verifyInvalidMacroKZero(descriptorStep == 3);
+        if (
+            descriptorDut.startReady
+            && !descriptorDut.workValid
+            && !descriptorDut.publishReady
+            && !descriptorDut.lookaheadValid
+            && !descriptorDut.completionValid
+        ) begin
+            descriptorStep <= 4;
+        end
+        else begin
+            $display("FAIL zero macro K changed scheduler state");
+            $finish(1);
+        end
+    endrule
+
+    rule sendInvalidMacroKLarge(
+        descriptorStep == 4 && descriptorDut.startReady
+    );
+        descriptorDut.start(invalidMacroKLargeDescriptor);
+        descriptorStep <= 5;
+    endrule
+
+    rule verifyInvalidMacroKLarge(descriptorStep == 5);
+        if (
+            descriptorDut.startReady
+            && !descriptorDut.workValid
+            && !descriptorDut.publishReady
+            && !descriptorDut.lookaheadValid
+            && !descriptorDut.completionValid
+        ) begin
+            descriptorDone <= True;
+            descriptorStep <= 6;
+        end
+        else begin
+            $display("FAIL oversized macro K changed scheduler state");
             $finish(1);
         end
     endrule

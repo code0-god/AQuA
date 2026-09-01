@@ -8,6 +8,9 @@ function ArrayWork#(16) invalidWork;
     return ArrayWork {
         jobId: 1,
         stripeId: 2,
+        stripeRowBegin: 0,
+        macroNStart: 0,
+        macroNCount: 1,
         iStart: 0,
         jStart: 0,
         iCount: 1,

@@ -42,6 +42,7 @@ function AquaMatmulDescriptor descriptorWithMacroN(
         k: k,
         stripeRows: stripeRows,
         macroNTileColumns: macroNTileColumns,
+        macroKTileElements: k,
         activationTensor: 1,
         weightTensor: 2,
         outputTensor: 3,

@@ -18,6 +18,7 @@ module mkTbMatmulWrongStripeId(Empty);
             k: 32,
             stripeRows: 16,
             macroNTileColumns: 16,
+            macroKTileElements: 32,
             activationTensor: 1,
             weightTensor: 2,
             outputTensor: 3,

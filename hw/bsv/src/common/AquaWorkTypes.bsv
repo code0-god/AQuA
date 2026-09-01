@@ -22,6 +22,8 @@ typedef struct {
 
     MatrixExtent stripeRows;
     MatrixExtent macroNTileColumns;
+    // 한 번에 실행할 macro-K 범위의 최대 원소 수.
+    MatrixExtent macroKTileElements;
 
     HostTensorId activationTensor;
     HostTensorId weightTensor;
@@ -48,6 +50,13 @@ typedef struct {
 typedef struct {
     MatmulJobId jobId;
     StripeId stripeId;
+
+    // 현재 stripe의 첫 global M row.
+    MatrixExtent stripeRowBegin;
+
+    // 현재 macro-N tile의 시작과 실제 column 수.
+    MatrixExtent macroNStart;
+    MatrixExtent macroNCount;
 
     MatrixExtent iStart;
     MatrixExtent jStart;
