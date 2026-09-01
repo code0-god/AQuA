@@ -346,7 +346,7 @@ AquaTileSelector
 
 GitHub:
 
-https://github.com/code0-god/AQuA/blob/main/README.md
+[README.md](../../README.md)
 
 ---
 
@@ -379,7 +379,7 @@ https://github.com/code0-god/AQuA/blob/main/README.md
 
 GitHub:
 
-https://github.com/code0-god/AQuA/blob/main/docs/hardware/MEMORY_AND_TILING.md
+[MEMORY_AND_TILING.md](MEMORY_AND_TILING.md)
 
 ---
 
@@ -428,7 +428,7 @@ external memory / physical DMA:
 
 GitHub:
 
-https://github.com/code0-god/AQuA/blob/main/docs/hardware/GEMMINI_IM2P_MIGRATION.md
+[GEMMINI_IM2P_MIGRATION.md](GEMMINI_IM2P_MIGRATION.md)
 
 ---
 
@@ -519,7 +519,7 @@ accumulator_banks가 array_dim을 나눌 수 있음
 
 GitHub:
 
-https://github.com/code0-god/AQuA/blob/main/crates/aqua-runtime/src/hardware.rs
+[hardware.rs](../../crates/aqua-runtime/src/hardware.rs)
 
 ---
 
@@ -690,7 +690,7 @@ ExSIA 표준 스트라이프는 전체 논리 K를 폴딩한다.
 
 GitHub:
 
-https://github.com/code0-god/AQuA/blob/main/crates/aqua-runtime/src/tiling/capacity.rs
+[capacity.rs](../../crates/aqua-runtime/src/tiling/capacity.rs)
 
 ---
 
@@ -813,7 +813,7 @@ J
 
 GitHub:
 
-https://github.com/code0-god/AQuA/blob/main/crates/aqua-runtime/src/tiling/selector.rs
+[selector.rs](../../crates/aqua-runtime/src/tiling/selector.rs)
 
 ---
 
@@ -877,7 +877,7 @@ canonical ExSIA
 
 GitHub:
 
-https://github.com/code0-god/AQuA/blob/main/crates/aqua-runtime/src/tiling.rs
+[tiling.rs](../../crates/aqua-runtime/src/tiling.rs)
 
 ---
 
