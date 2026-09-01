@@ -9,7 +9,7 @@ pub(super) struct ResourceUsage {
     pub(super) activation_spad_rows: usize,
     pub(super) weight_spad_rows: usize,
     pub(super) hp1_metadata_bytes: usize,
-    pub(super) accumulator_rows: usize,
+    pub(super) accumulator_rows_per_bank: usize,
     pub(super) exsia_slot_bytes: usize,
 }
 
@@ -37,7 +37,7 @@ pub(super) fn resource_usage(
         activation_spad_rows: total_activation_spad_rows(factors, geometry)?,
         weight_spad_rows: total_weight_spad_rows(factors, geometry)?,
         hp1_metadata_bytes: hp1_metadata_bytes(n_tile_columns, k_tile_elements, geometry)?,
-        accumulator_rows: total_accumulator_rows(factors, geometry)?,
+        accumulator_rows_per_bank: accumulator_rows_per_bank(factors, geometry)?,
         exsia_slot_bytes: exsia_slot_bytes(stripe_rows, shape.k(), geometry)?,
     })
 }
@@ -50,7 +50,7 @@ pub(super) fn limiting_resource(
         Some(LimitingResource::ActivationSpad)
     } else if usage.weight_spad_rows > geometry.usable_weight_spad_rows() {
         Some(LimitingResource::WeightSpad)
-    } else if usage.accumulator_rows > geometry.usable_accumulator_rows() {
+    } else if usage.accumulator_rows_per_bank > geometry.usable_accumulator_rows_per_bank() {
         Some(LimitingResource::Accumulator)
     } else if usage.hp1_metadata_bytes > geometry.hp1_metadata_capacity_bytes() {
         Some(LimitingResource::Hp1Metadata)
@@ -81,7 +81,7 @@ fn total_weight_spad_rows(
     )
 }
 
-fn total_accumulator_rows(
+fn accumulator_rows_per_bank(
     factors: TileFactors,
     geometry: AquaHardwareGeometry,
 ) -> Result<usize, TilingError> {

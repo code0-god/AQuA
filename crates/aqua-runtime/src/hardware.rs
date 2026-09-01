@@ -149,8 +149,11 @@ impl AquaHardwareGeometry {
         usable_rows(self.weight_spad_rows(), self.double_buffer_weight)
     }
 
-    pub const fn usable_accumulator_rows(self) -> usize {
-        usable_rows(self.accumulator_rows(), self.double_buffer_accumulator)
+    pub const fn usable_accumulator_rows_per_bank(self) -> usize {
+        usable_rows(
+            self.accumulator_rows_per_bank,
+            self.double_buffer_accumulator,
+        )
     }
 }
 
@@ -188,7 +191,7 @@ impl fmt::Display for HardwareGeometryError {
             }
             Self::IncompatibleAccumulatorBanks { array_dim, banks } => write!(
                 formatter,
-                "accumulator banks {banks} do not divide array dimension {array_dim}"
+                "accumulator banks {banks} must equal array dimension {array_dim}"
             ),
             Self::CapacityOverflow { resource } => {
                 write!(formatter, "{resource} capacity calculation overflow")

@@ -29,7 +29,7 @@ impl GeometryFixture {
         AquaHardwareGeometry::builder(self.dim)
             .activation_spad(1, self.activation_rows)
             .weight_spad(1, self.weight_rows)
-            .accumulator(1, self.accumulator_rows)
+            .accumulator(self.dim, self.accumulator_rows)
             .exsia_slots(2, self.exsia_slot_bytes)
             .element_bits(8, 8, 32)
             .hp1_metadata(self.hp1_metadata_bytes, 16, 16)
@@ -167,10 +167,11 @@ fn respects_weight_capacity() {
 }
 
 #[test]
-fn respects_accumulator_capacity() {
+fn selector_never_returns_plan_exceeding_accumulator_rows_per_bank() {
     // Given
     let mut fixture = GeometryFixture::generous(16);
-    fixture.accumulator_rows = 64;
+    fixture.accumulator_rows = 128;
+    fixture.double_buffered = true;
     let geometry = fixture.build();
 
     // When
@@ -179,7 +180,22 @@ fn respects_accumulator_capacity() {
         .expect("plan");
 
     // Then
-    assert!(plan.accumulator_rows() <= geometry.usable_accumulator_rows());
+    assert!(plan.accumulator_rows_per_bank() <= geometry.accumulator_rows_per_bank() / 2);
+}
+
+#[test]
+fn accumulator_capacity_is_checked_per_bank() {
+    // Given
+    let fixture = GeometryFixture::generous(16);
+    let geometry = fixture.build();
+    let shape = MatmulShape::new(32, 48, 16).expect("shape");
+    let factors = TileFactors::new(2, 3, 1);
+
+    // When
+    let usage = capacity::resource_usage(geometry, shape, factors).expect("usage");
+
+    // Then
+    assert_eq!(usage.accumulator_rows_per_bank, 2 * 3 * 16);
 }
 
 #[test]

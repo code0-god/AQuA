@@ -21,7 +21,7 @@ impl AquaTileSelector {
         let matrix_i = padded_m / dim;
         let matrix_j = padded_n / dim;
         let matrix_k = padded_k / dim;
-        let accumulator_matrices = self.geometry.usable_accumulator_rows() / dim;
+        let accumulator_matrices = self.geometry.usable_accumulator_rows_per_bank() / dim;
         let max_i_j = integer_sqrt(accumulator_matrices);
         if max_i_j == 0 {
             return no_feasible(shape, LimitingResource::Accumulator);
@@ -63,7 +63,7 @@ impl AquaTileSelector {
             activation_spad_rows: usage.activation_spad_rows,
             weight_spad_rows: usage.weight_spad_rows,
             hp1_metadata_bytes: usage.hp1_metadata_bytes,
-            accumulator_rows: usage.accumulator_rows,
+            accumulator_rows_per_bank: usage.accumulator_rows_per_bank,
             exsia_slot_bytes: usage.exsia_slot_bytes,
         })
     }

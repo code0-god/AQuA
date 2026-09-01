@@ -182,10 +182,7 @@ fn validate_array_dim(geometry: AquaHardwareGeometry) -> Result<(), HardwareGeom
             array_dim: geometry.array_dim,
         });
     }
-    if !geometry
-        .array_dim
-        .is_multiple_of(geometry.accumulator_banks)
-    {
+    if geometry.accumulator_banks != geometry.array_dim {
         return Err(HardwareGeometryError::IncompatibleAccumulatorBanks {
             array_dim: geometry.array_dim,
             banks: geometry.accumulator_banks,
@@ -232,7 +229,7 @@ fn validate_capacities(geometry: AquaHardwareGeometry) -> Result<(), HardwareGeo
     for (resource, usable_rows) in [
         ("activation_spad", geometry.usable_activation_spad_rows()),
         ("weight_spad", geometry.usable_weight_spad_rows()),
-        ("accumulator", geometry.usable_accumulator_rows()),
+        ("accumulator", geometry.usable_accumulator_rows_per_bank()),
     ] {
         if usable_rows == 0 {
             return Err(HardwareGeometryError::EmptyUsableCapacity { resource });
