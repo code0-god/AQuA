@@ -45,8 +45,10 @@ function ProviderLoadWork#(16) loadWork(UInt#(3) phase);
     };
 endfunction
 
+// G0010 is testbench-only: consume/respond rules drain before guarded phase transitions, so no urgency attribute is needed.
 module mkTbLoadController(Empty);
-    LoadControllerIfc#(16, 2, 16, 3, 17, 16) dut <- mkLoadController;
+    LoadControllerIfc#(16, 2, 16, 3, 17, 16, 16) dut
+        <- mkLoadController;
 
     Reg#(UInt#(3)) phase <- mkReg(0);
     Reg#(Bool) running <- mkReg(False);

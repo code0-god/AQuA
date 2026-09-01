@@ -12,6 +12,7 @@ pub use geometry::{
 };
 pub use hardware::{
     AquaHardwareGeometry, AquaHardwareGeometryBuilder, ExsiaSlotLayout, HardwareGeometryError,
+    Hp1MetaGeometry,
 };
 pub use tiling::{
     AquaTilePlan, AquaTileSelector, LimitingResource, MatmulShape, TileFactors, TilingError,

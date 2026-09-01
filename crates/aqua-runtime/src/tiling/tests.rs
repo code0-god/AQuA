@@ -1,5 +1,5 @@
 use super::*;
-use crate::hardware::{AquaHardwareGeometry, AquaHardwareGeometryBuilder};
+use crate::hardware::{AquaHardwareGeometry, AquaHardwareGeometryBuilder, Hp1MetaGeometry};
 
 #[derive(Clone, Copy)]
 struct GeometryFixture {
@@ -8,7 +8,8 @@ struct GeometryFixture {
     weight_rows: usize,
     accumulator_rows: usize,
     exsia_slot_bytes: usize,
-    hp1_metadata_bytes: usize,
+    hp1_block_entries: usize,
+    hp1_row_entries: usize,
     double_buffered: bool,
 }
 
@@ -20,7 +21,8 @@ impl GeometryFixture {
             weight_rows: 16_384,
             accumulator_rows: 4096,
             exsia_slot_bytes: 1 << 30,
-            hp1_metadata_bytes: 1 << 30,
+            hp1_block_entries: 4096,
+            hp1_row_entries: 4096,
             double_buffered: false,
         }
     }
@@ -29,10 +31,15 @@ impl GeometryFixture {
         AquaHardwareGeometry::builder(self.dim)
             .activation_spad(1, self.activation_rows)
             .weight_spad(1, self.weight_rows)
-            .accumulator(1, self.accumulator_rows)
+            .accumulator(self.dim, self.accumulator_rows)
             .exsia_slots(2, self.exsia_slot_bytes)
             .element_bits(8, 8, 32)
-            .hp1_metadata(self.hp1_metadata_bytes, 16, 16)
+            .hp1_metadata(Hp1MetaGeometry {
+                block_entries: self.hp1_block_entries,
+                row_entries: self.hp1_row_entries,
+                left_shift_bits: 16,
+                row_right_shift_bits: 16,
+            })
             .exsia_layout(32, 16, 32)
             .double_buffering(
                 self.double_buffered,
@@ -52,9 +59,6 @@ fn select(fixture: GeometryFixture, shape: MatmulShape) -> Result<AquaTilePlan, 
 
 #[test]
 fn rejects_zero_matmul_dimension() {
-    // Given
-    let geometry = GeometryFixture::generous(16).build();
-
     // When
     let error = MatmulShape::new(0, 16, 16).expect_err("zero M must fail");
 
@@ -63,7 +67,6 @@ fn rejects_zero_matmul_dimension() {
         error,
         TilingError::ZeroMatmulDimension { dimension: "m" }
     ));
-    assert_eq!(geometry.array_dim(), 16);
 }
 
 #[test]
@@ -121,7 +124,8 @@ fn preserves_j_i_k_growth_order() {
         weight_rows: 8192,
         accumulator_rows: 1024,
         exsia_slot_bytes: 1 << 30,
-        hp1_metadata_bytes: 1 << 30,
+        hp1_block_entries: 4096,
+        hp1_row_entries: 4096,
         double_buffered: true,
     };
     let shape = MatmulShape::new(128, 128, 128).expect("shape");
@@ -167,10 +171,11 @@ fn respects_weight_capacity() {
 }
 
 #[test]
-fn respects_accumulator_capacity() {
+fn selector_never_returns_plan_exceeding_accumulator_rows_per_bank() {
     // Given
     let mut fixture = GeometryFixture::generous(16);
-    fixture.accumulator_rows = 64;
+    fixture.accumulator_rows = 128;
+    fixture.double_buffered = true;
     let geometry = fixture.build();
 
     // When
@@ -179,23 +184,77 @@ fn respects_accumulator_capacity() {
         .expect("plan");
 
     // Then
-    assert!(plan.accumulator_rows() <= geometry.usable_accumulator_rows());
+    assert!(plan.accumulator_rows_per_bank() <= geometry.accumulator_rows_per_bank() / 2);
 }
 
 #[test]
-fn respects_hp1_metadata_capacity() {
+fn accumulator_capacity_is_checked_per_bank() {
+    // Given
+    let fixture = GeometryFixture::generous(16);
+    let geometry = fixture.build();
+    let shape = MatmulShape::new(32, 48, 16).expect("shape");
+    let factors = TileFactors::new(2, 3, 1);
+
+    // When
+    let usage = capacity::resource_usage(geometry, shape, factors).expect("usage");
+
+    // Then
+    assert_eq!(usage.accumulator_rows_per_bank, 2 * 3 * 16);
+}
+
+#[test]
+fn block_scale_storage_includes_zero_block_flag() {
+    // Given
+    let geometry = GeometryFixture::generous(16)
+        .builder()
+        .hp1_metadata(Hp1MetaGeometry {
+            block_entries: 8,
+            row_entries: 4,
+            left_shift_bits: 5,
+            row_right_shift_bits: 4,
+        })
+        .build()
+        .expect("asymmetric HP1 metadata geometry");
+    let shape = MatmulShape::new(16, 16, 32).expect("shape");
+    let factors = TileFactors::new(1, 1, 2);
+
+    // When
+    let usage = capacity::resource_usage(geometry, shape, factors).expect("usage");
+
+    // Then
+    assert_eq!(usage.hp1_metadata_bytes, 20);
+}
+
+#[test]
+fn selector_respects_block_metadata_depth() {
     // Given
     let mut fixture = GeometryFixture::generous(16);
-    fixture.hp1_metadata_bytes = 64;
+    fixture.hp1_block_entries = 1;
     let geometry = fixture.build();
 
     // When
     let plan = AquaTileSelector::new(geometry)
-        .select(MatmulShape::new(64, 64, 128).expect("shape"))
+        .select(MatmulShape::new(16, 64, 128).expect("shape"))
         .expect("plan");
 
     // Then
-    assert!(plan.hp1_metadata_bytes() <= geometry.hp1_metadata_capacity_bytes());
+    assert!(plan.hp1_block_metadata_entries() <= geometry.hp1_block_metadata_entries());
+}
+
+#[test]
+fn selector_respects_row_metadata_depth() {
+    // Given
+    let mut fixture = GeometryFixture::generous(16);
+    fixture.hp1_row_entries = 1;
+    let geometry = fixture.build();
+
+    // When
+    let plan = AquaTileSelector::new(geometry)
+        .select(MatmulShape::new(16, 64, 32).expect("shape"))
+        .expect("plan");
+
+    // Then
+    assert!(plan.hp1_row_metadata_entries() <= geometry.hp1_row_metadata_entries());
 }
 
 #[test]

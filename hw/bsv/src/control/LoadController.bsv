@@ -148,7 +148,8 @@ interface LoadControllerIfc#(
     numeric type activationRowCount,
     numeric type weightBankCount,
     numeric type weightRowCount,
-    numeric type metaEntries
+    numeric type blockMetaEntries,
+    numeric type rowMetaEntries
 );
     method Bool scheduleReady;
     method Action schedule(ProviderLoadWork#(arrayDim) work);
@@ -173,7 +174,8 @@ function Bool providerLoadWorkValid(
     Integer activationRowCount,
     Integer weightBankCount,
     Integer weightRowCount,
-    Integer metaEntries
+    Integer blockMetaEntries,
+    Integer rowMetaEntries
 );
     UInt#(32) iCount = zeroExtend(work.iCount);
     UInt#(32) jCount = zeroExtend(work.jCount);
@@ -229,8 +231,8 @@ function Bool providerLoadWorkValid(
         && work.rowScaleDestination.region == LocalHp1Meta
         && blockMetadataBank == 0
         && rowMetadataBank == 0
-        && blockMetadataRow < fromInteger(metaEntries)
-        && rowMetadataRow < fromInteger(metaEntries);
+        && blockMetadataRow < fromInteger(blockMetaEntries)
+        && rowMetadataRow < fromInteger(rowMetaEntries);
 endfunction
 
 function Action validateProviderLoadWork(
@@ -239,7 +241,8 @@ function Action validateProviderLoadWork(
     Integer activationRowCount,
     Integer weightBankCount,
     Integer weightRowCount,
-    Integer metaEntries
+    Integer blockMetaEntries,
+    Integer rowMetaEntries
 );
     action
         UInt#(32) iCount = zeroExtend(work.iCount);
@@ -316,9 +319,9 @@ function Action validateProviderLoadWork(
                       "block shift metadata bank must be zero");
         dynamicAssert(rowMetadataBank == 0,
                       "row shift metadata bank must be zero");
-        dynamicAssert(blockMetadataRow < fromInteger(metaEntries),
+        dynamicAssert(blockMetadataRow < fromInteger(blockMetaEntries),
                       "block shift metadata row out of bounds");
-        dynamicAssert(rowMetadataRow < fromInteger(metaEntries),
+        dynamicAssert(rowMetadataRow < fromInteger(rowMetaEntries),
                       "row shift metadata row out of bounds");
     endaction
 endfunction
@@ -329,7 +332,8 @@ module mkLoadController(LoadControllerIfc#(
     activationRowCount,
     weightBankCount,
     weightRowCount,
-    metaEntries
+    blockMetaEntries,
+    rowMetaEntries
 )) provisos (
     Add#(activationLanePadding, TLog#(arrayDim), 32),
     Add#(weightLanePadding, TLog#(arrayDim), 32)
@@ -380,9 +384,14 @@ module mkLoadController(LoadControllerIfc#(
         "weight row count exceeds local address width"
     );
     staticAssert(
-        valueOf(metaEntries) > 0
-        && valueOf(metaEntries) <= 2 ** 16,
-        "metadata entry count exceeds local address width"
+        valueOf(blockMetaEntries) > 0
+        && valueOf(blockMetaEntries) <= 2 ** 16,
+        "block metadata entry count exceeds local address width"
+    );
+    staticAssert(
+        valueOf(rowMetaEntries) > 0
+        && valueOf(rowMetaEntries) <= 2 ** 16,
+        "row metadata entry count exceeds local address width"
     );
 
     function Bool rowShiftNeeded(ProviderLoadWork#(arrayDim) work);
@@ -487,7 +496,8 @@ module mkLoadController(LoadControllerIfc#(
             valueOf(activationRowCount),
             valueOf(weightBankCount),
             valueOf(weightRowCount),
-            valueOf(metaEntries)
+            valueOf(blockMetaEntries),
+            valueOf(rowMetaEntries)
         );
         validateProviderLoadWork(
             work,
@@ -495,7 +505,8 @@ module mkLoadController(LoadControllerIfc#(
             valueOf(activationRowCount),
             valueOf(weightBankCount),
             valueOf(weightRowCount),
-            valueOf(metaEntries)
+            valueOf(blockMetaEntries),
+            valueOf(rowMetaEntries)
         );
         if (valid) begin
             active <= tagged Valid work;

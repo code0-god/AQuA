@@ -31,6 +31,7 @@ BSV_TEST_TOPS := \
 	mkTbLocalAddr \
 	mkTbScratchpadBank \
 	mkTbAccumulatorMem \
+	mkTbAccumulatorBankGeometry \
 	mkTbWorkScheduler \
 	mkTbMatmulScheduler \
 	mkTbMockAquaProvider \
@@ -40,9 +41,14 @@ BSV_TEST_TOPS := \
 
 BSV_EXPECT_FAIL_TOPS := \
 	mkTbAccumulatorOverflow \
+	mkTbInvalidAccumulatorBankGeometry \
 	mkTbMatmulStripeGap \
 	mkTbMatmulStripeOverlap \
 	mkTbMatmulStripeOutOfBounds \
+	mkTbMatmulInvalidDescriptor \
+	mkTbMatmulWrongStripeId \
+	mkTbHp1BlockDepthOverflow \
+	mkTbHp1RowDepthOverflow \
 	mkTbActivationLoadDepthOverflow \
 	mkTbWeightLoadDepthOverflow \
 	mkTbActivationResponseMaskMismatch \
@@ -53,7 +59,8 @@ BSV_NO_ASSERT_TEST_TOPS := \
 	mkTbLoadInvalidWorkGate \
 	mkTbStoreInvalidWorkGate \
 	mkTbAccumulatorOverflowGate \
-	mkTbWorkRangeOverflowGate
+	mkTbWorkRangeOverflowGate \
+	mkTbMatmulInvalidInputGate
 
 SYNTH_TOPS := \
 	mkMemorySynthTop \
@@ -89,6 +96,20 @@ bsv-test: | $(BUILD_DIR)/bsc $(BUILD_DIR)/sim $(BUILD_DIR)/info $(BUILD_DIR)/bin
 	for top in $(BSV_EXPECT_FAIL_TOPS); do \
 	  package="$${top#mk}"; \
 	  echo "[BSC] compile expected-failure $$top"; \
+	  if [[ "$$top" == mkTbInvalidAccumulatorBankGeometry ]]; then \
+	    if output="$$($(BSC) -u -sim $(BSC_COMMON) -g "$$top" "tb/$$package.bsv" 2>&1)"; then \
+	      printf '%s\n' "$$output"; \
+	      echo "$$top unexpectedly elaborated" >&2; \
+	      exit 1; \
+	    fi; \
+	    printf '%s\n' "$$output"; \
+	    if [[ "$$output" != *"count must equal array dimension"* ]]; then \
+	      echo "$$top failed for the wrong reason" >&2; \
+	      exit 1; \
+	    fi; \
+	    echo "PASS expected elaboration failure $$top"; \
+	    continue; \
+	  fi; \
 	  $(BSC) -u -sim $(BSC_COMMON) -g "$$top" "tb/$$package.bsv"; \
 	  $(BSC) -sim $(BSC_COMMON) -e "$$top" \
 	    -o "$(BUILD_DIR)/bin/$$package"; \
@@ -98,6 +119,10 @@ bsv-test: | $(BUILD_DIR)/bsc $(BUILD_DIR)/sim $(BUILD_DIR)/info $(BUILD_DIR)/bin
 	    mkTbMatmulStripeGap) expected='stripe publication gap' ;; \
 	    mkTbMatmulStripeOverlap) expected='stripe publication overlap' ;; \
 	    mkTbMatmulStripeOutOfBounds) expected='stripe publication out of bounds' ;; \
+	    mkTbMatmulInvalidDescriptor) expected='invalid matmul descriptor' ;; \
+	    mkTbMatmulWrongStripeId) expected='stripe publication ID mismatch' ;; \
+	    mkTbHp1BlockDepthOverflow) expected='HP1 block metadata out of range' ;; \
+	    mkTbHp1RowDepthOverflow) expected='HP1 row metadata out of range' ;; \
 	    mkTbActivationLoadDepthOverflow) expected='activation local row exceeds configured rows' ;; \
 	    mkTbWeightLoadDepthOverflow) expected='weight local row exceeds configured rows' ;; \
 	    mkTbActivationResponseMaskMismatch) expected='activation response mask does not match requested K count' ;; \

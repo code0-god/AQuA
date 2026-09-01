@@ -44,10 +44,12 @@ interface LoadStagerIfc#(
     numeric type activationRows,
     numeric type weightBanks,
     numeric type weightRows,
-    numeric type metaEntries,
+    numeric type blockMetaEntries,
+    numeric type rowMetaEntries,
     numeric type activationWidth,
     numeric type weightWidth,
-    numeric type shiftWidth
+    numeric type blockShiftWidth,
+    numeric type rowShiftWidth
 );
     interface ReadResponseSinkIfc#(
         ActivationMemoryResponse#(arrayDim, activationWidth)
@@ -56,10 +58,10 @@ interface LoadStagerIfc#(
         WeightMemoryResponse#(arrayDim, weightWidth)
     ) weightResponses;
     interface ReadResponseSinkIfc#(
-        BlockShiftMemoryResponse#(arrayDim, shiftWidth)
+        BlockShiftMemoryResponse#(arrayDim, blockShiftWidth)
     ) blockShiftResponses;
     interface ReadResponseSinkIfc#(
-        RowScaleMemoryResponse#(arrayDim, shiftWidth)
+        RowScaleMemoryResponse#(arrayDim, rowShiftWidth)
     ) rowShiftResponses;
 
     interface Vector#(
@@ -78,7 +80,13 @@ interface LoadStagerIfc#(
             Bit#(weightWidth)
         )
     ) weightBanks;
-    interface Hp1MetaMemIfc#(metaEntries, arrayDim, shiftWidth) hp1Meta;
+    interface Hp1MetaMemIfc#(
+        blockMetaEntries,
+        rowMetaEntries,
+        arrayDim,
+        blockShiftWidth,
+        rowShiftWidth
+    ) hp1Meta;
 endinterface
 
 module mkLoadStager#(
@@ -88,7 +96,8 @@ module mkLoadStager#(
         activationRows,
         weightBanks,
         weightRows,
-        metaEntries
+        blockMetaEntries,
+        rowMetaEntries
     ) load
 )(LoadStagerIfc#(
     arrayDim,
@@ -96,16 +105,19 @@ module mkLoadStager#(
     activationRows,
     weightBanks,
     weightRows,
-    metaEntries,
+    blockMetaEntries,
+    rowMetaEntries,
     activationWidth,
     weightWidth,
-    shiftWidth
+    blockShiftWidth,
+    rowShiftWidth
 )) provisos (
     Add#(activationBankPadding, TLog#(activationBanks), 32),
     Add#(activationRowPadding, TLog#(TAdd#(activationRows, 1)), 32),
     Add#(weightBankPadding, TLog#(weightBanks), 32),
     Add#(weightRowPadding, TLog#(TAdd#(weightRows, 1)), 32),
-    Add#(metaPadding, TLog#(TAdd#(metaEntries, 1)), 32)
+    Add#(blockMetaPadding, TLog#(TAdd#(blockMetaEntries, 1)), 32),
+    Add#(rowMetaPadding, TLog#(TAdd#(rowMetaEntries, 1)), 32)
 );
     BankedScratchpadIfc#(
         activationBanks,
@@ -119,8 +131,13 @@ module mkLoadStager#(
         arrayDim,
         Bit#(weightWidth)
     ) weights <- mkBankedScratchpad;
-    Hp1MetaMemIfc#(metaEntries, arrayDim, shiftWidth) metadata
-        <- mkHp1MetaMem;
+    Hp1MetaMemIfc#(
+        blockMetaEntries,
+        rowMetaEntries,
+        arrayDim,
+        blockShiftWidth,
+        rowShiftWidth
+    ) metadata <- mkHp1MetaMem;
 
     interface ReadResponseSinkIfc activationResponses;
         method Bool ready(
@@ -216,22 +233,29 @@ module mkLoadStager#(
 
     interface ReadResponseSinkIfc blockShiftResponses;
         method Bool ready(
-            BlockShiftMemoryResponse#(arrayDim, shiftWidth) response
+            BlockShiftMemoryResponse#(arrayDim, blockShiftWidth) response
         );
             return load.blockShiftPort.responses.ready(response.tag)
-                && validMetadataResponse(response.tag, valueOf(metaEntries))
+                && validMetadataResponse(
+                    response.tag,
+                    valueOf(blockMetaEntries)
+                )
                 && load.metadataResponseMaskValid(response.payload.mask);
         endmethod
 
         method Action put(
-            BlockShiftMemoryResponse#(arrayDim, shiftWidth) response
+            BlockShiftMemoryResponse#(arrayDim, blockShiftWidth) response
         );
             UInt#(32) row = localRow(response.tag);
-            Hp1MetaAddr#(metaEntries) address = truncate(pack(row));
+            Hp1BlockMetaAddr#(blockMetaEntries) address =
+                truncate(pack(row));
             Bool maskValid =
                 load.metadataResponseMaskValid(response.payload.mask);
             Bool valid = load.blockShiftPort.responses.ready(response.tag)
-                && validMetadataResponse(response.tag, valueOf(metaEntries));
+                && validMetadataResponse(
+                    response.tag,
+                    valueOf(blockMetaEntries)
+                );
             dynamicAssert(
                 maskValid,
                 "metadata response mask does not match requested J count"
@@ -250,22 +274,28 @@ module mkLoadStager#(
 
     interface ReadResponseSinkIfc rowShiftResponses;
         method Bool ready(
-            RowScaleMemoryResponse#(arrayDim, shiftWidth) response
+            RowScaleMemoryResponse#(arrayDim, rowShiftWidth) response
         );
             return load.rowShiftPort.responses.ready(response.tag)
-                && validMetadataResponse(response.tag, valueOf(metaEntries))
+                && validMetadataResponse(
+                    response.tag,
+                    valueOf(rowMetaEntries)
+                )
                 && load.metadataResponseMaskValid(response.payload.mask);
         endmethod
 
         method Action put(
-            RowScaleMemoryResponse#(arrayDim, shiftWidth) response
+            RowScaleMemoryResponse#(arrayDim, rowShiftWidth) response
         );
             UInt#(32) row = localRow(response.tag);
-            Hp1MetaAddr#(metaEntries) address = truncate(pack(row));
+            Hp1RowMetaAddr#(rowMetaEntries) address = truncate(pack(row));
             Bool maskValid =
                 load.metadataResponseMaskValid(response.payload.mask);
             Bool valid = load.rowShiftPort.responses.ready(response.tag)
-                && validMetadataResponse(response.tag, valueOf(metaEntries));
+                && validMetadataResponse(
+                    response.tag,
+                    valueOf(rowMetaEntries)
+                );
             dynamicAssert(
                 maskValid,
                 "metadata response mask does not match requested J count"

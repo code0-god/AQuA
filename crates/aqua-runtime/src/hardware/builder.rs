@@ -1,4 +1,4 @@
-use super::{AquaHardwareGeometry, ExsiaSlotLayout, HardwareGeometryError};
+use super::{AquaHardwareGeometry, ExsiaSlotLayout, HardwareGeometryError, Hp1MetaGeometry};
 use aqua_protocol::AQUA_BLOCK_SIZE;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -23,8 +23,12 @@ impl AquaHardwareGeometryBuilder {
                 activation_element_bits: 0,
                 weight_element_bits: 0,
                 accumulator_element_bits: 0,
-                hp1_block_shift_bits: 0,
-                hp1_row_shift_bits: 0,
+                hp1_meta: Hp1MetaGeometry {
+                    block_entries: 0,
+                    row_entries: 0,
+                    left_shift_bits: 0,
+                    row_right_shift_bits: 0,
+                },
                 exsia_layout: ExsiaSlotLayout {
                     wide_value_bits: 0,
                     exponent_bits: 0,
@@ -73,15 +77,8 @@ impl AquaHardwareGeometryBuilder {
         self
     }
 
-    pub const fn hp1_metadata(
-        mut self,
-        capacity_bytes: usize,
-        block_shift_bits: usize,
-        row_shift_bits: usize,
-    ) -> Self {
-        self.geometry.hp1_metadata_capacity_bytes = capacity_bytes;
-        self.geometry.hp1_block_shift_bits = block_shift_bits;
-        self.geometry.hp1_row_shift_bits = row_shift_bits;
+    pub const fn hp1_metadata(mut self, geometry: Hp1MetaGeometry) -> Self {
+        self.geometry.hp1_meta = geometry;
         self
     }
 
@@ -111,10 +108,14 @@ impl AquaHardwareGeometryBuilder {
         self
     }
 
-    pub fn build(self) -> Result<AquaHardwareGeometry, HardwareGeometryError> {
+    pub fn build(mut self) -> Result<AquaHardwareGeometry, HardwareGeometryError> {
         validate_nonzero(self.geometry)?;
         validate_array_dim(self.geometry)?;
         validate_capacities(self.geometry)?;
+        self.geometry.hp1_metadata_capacity_bytes = self
+            .geometry
+            .hp1_meta
+            .capacity_bytes(self.geometry.array_dim)?;
         Ok(self.geometry)
     }
 }
@@ -139,18 +140,22 @@ fn validate_nonzero(geometry: AquaHardwareGeometry) -> Result<(), HardwareGeomet
         ),
         ("exsia_slot_count", geometry.exsia_slot_count),
         ("exsia_slot_bytes", geometry.exsia_slot_bytes),
-        (
-            "hp1_metadata_capacity_bytes",
-            geometry.hp1_metadata_capacity_bytes,
-        ),
         ("activation_element_bits", geometry.activation_element_bits),
         ("weight_element_bits", geometry.weight_element_bits),
         (
             "accumulator_element_bits",
             geometry.accumulator_element_bits,
         ),
-        ("hp1_block_shift_bits", geometry.hp1_block_shift_bits),
-        ("hp1_row_shift_bits", geometry.hp1_row_shift_bits),
+        (
+            "hp1_block_metadata_entries",
+            geometry.hp1_meta.block_entries,
+        ),
+        ("hp1_row_metadata_entries", geometry.hp1_meta.row_entries),
+        ("hp1_left_shift_bits", geometry.hp1_meta.left_shift_bits),
+        (
+            "hp1_row_right_shift_bits",
+            geometry.hp1_meta.row_right_shift_bits,
+        ),
         (
             "exsia_wide_value_bits",
             geometry.exsia_layout.wide_value_bits,
@@ -167,7 +172,6 @@ fn validate_nonzero(geometry: AquaHardwareGeometry) -> Result<(), HardwareGeomet
     }
     Ok(())
 }
-
 fn validate_array_dim(geometry: AquaHardwareGeometry) -> Result<(), HardwareGeometryError> {
     if !geometry.array_dim.is_multiple_of(AQUA_BLOCK_SIZE)
         && !AQUA_BLOCK_SIZE.is_multiple_of(geometry.array_dim)
@@ -182,10 +186,7 @@ fn validate_array_dim(geometry: AquaHardwareGeometry) -> Result<(), HardwareGeom
             array_dim: geometry.array_dim,
         });
     }
-    if !geometry
-        .array_dim
-        .is_multiple_of(geometry.accumulator_banks)
-    {
+    if geometry.accumulator_banks != geometry.array_dim {
         return Err(HardwareGeometryError::IncompatibleAccumulatorBanks {
             array_dim: geometry.array_dim,
             banks: geometry.accumulator_banks,
@@ -232,7 +233,7 @@ fn validate_capacities(geometry: AquaHardwareGeometry) -> Result<(), HardwareGeo
     for (resource, usable_rows) in [
         ("activation_spad", geometry.usable_activation_spad_rows()),
         ("weight_spad", geometry.usable_weight_spad_rows()),
-        ("accumulator", geometry.usable_accumulator_rows()),
+        ("accumulator", geometry.usable_accumulator_rows_per_bank()),
     ] {
         if usable_rows == 0 {
             return Err(HardwareGeometryError::EmptyUsableCapacity { resource });

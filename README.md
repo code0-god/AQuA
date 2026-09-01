@@ -107,16 +107,30 @@ hw/bsv/src/
 경계에서 I를 다시 시작한다. `WorkScheduler`는 현재 `ArrayWork`의 논리 K
 범위만 32-wide HP1 블록 경계를 넘지 않는 프래그먼트로 나눈다.
 
+RTL의 매크로 K 순회는 아직 구현되지 않았다. 현재 BSV 스케줄러는 하나의
+명시적인 전체 논리 K 범위를 사용하고, `WorkScheduler`가 이를 DIM 및
+32-element 블록 경계 프래그먼트로 분할한다. Rust의 `k_tile_elements`는
+리소스 인식 계획에 계속 포함되며, `AquaLoopMatmul`이 추가될 때 실제 RTL
+실행 경계가 된다.
+
+작은 WS arithmetic bring-up/test는 현재의 full-logical-K →
+`WorkScheduler` fragment 경로를 임시로 재사용할 수 있다. 이는 unit bring-up
+경로일 뿐 production tiled execution architecture가 아니다. 전체 accelerator
+execution path는 `AquaLoopMatmul`이 Rust `k_tile_elements`를 RTL 매크로 K
+범위로 연결한 뒤 WS/PE 실행과 통합되어야 완료된 것으로 본다.
+
 `LoadController`는 활성 작업과 네 개의 독립적인 활성값, 가중치, block-scale,
 row-shift 단일 outstanding 채널을 소유한다. 각 채널은 종류 판별자가 없는
 타입 지정 요청/응답 포트다. 공급자는 요청을 소비한 다음 사이클부터만 응답할
 수 있으며, `LoadStager`는 태그, 로컬 영역, 범위, 메타데이터 마스크를 검증한
 뒤에만 쓰기를 수행한다.
 
-HP1 block-scale과 row-shift 응답은 요청한 J 열별 벡터와 유효 마스크를
-전달한다. 부분 J 작업은 비활성 레인을 보존하며 `ZeroBlock`도 일반
-block-scale 값처럼 열별로 유지한다. 활성값 및 가중치 스크래치패드의 뱅크/행
-기하와 누산기 뱅크 수는 서로 독립적인 매개변수다.
+HP1 scaling은 부동소수점 weight scale 대신 방향이 명시된 정수 메타데이터를
+직접 저장한다. block metadata는 `zeroBlock`과 block-level LEFT shift를,
+row metadata는 row-level RIGHT shift를 보존한다. 두 메모리는 독립적인
+depth와 width를 가지며, 부분 J 작업은 비활성 레인을 보존한다. 활성값 및
+가중치 스크래치패드의 뱅크/행 기하는 독립적이지만, 현재 첫 하드웨어 계약의
+누산기 뱅크 수는 `array_dim`과 같고 bank folding은 구현하지 않는다.
 
 현재 BSV 주소와 작업 계약에는 슬롯, 이중 버퍼 컨텍스트 또는 매크로 K
 식별자가 없다. 실제 동시 residency와 `AquaLoopMatmul` 매크로 K 순회가
@@ -129,6 +143,11 @@ block-scale 값처럼 열별로 유지한다. 활성값 및 가중치 스크래�
 `FixedStripePlanner`는 통합 및 테스트를 위한 결정론적 브리지 정책이다. 의도적으로 `aqua-candle`에 위치하며, 런타임 타일러, 하드웨어 용량 모델, 스크래치패드 플래너 또는 정규 ExSIA 구성의 일부가 아니다.
 
 `AquaTileSelector`는 별도의 호스트/런타임 하드웨어 정책이다. 독립적인 활성화, 가중치, HP1 메타데이터, 누산기, 전체 논리 K ExSIA 슬롯 용량을 검사하면서 Gemmini의 J-이후-I-이후-K 인수 증가 순서를 보존한다. 선택된 스트라이프 행은 ExSIA 실행 전에 검증된 `ActivationExecutionPlan`에 고정된다.
+
+`make -C hw/bsv verify`는 positive Bluesim, expected-failure, assertions-disabled
+safety test와 대표 BSC Verilog 생성을 검증한다. 이는 물리 FPGA synthesis
+검증이 아니다. BRAM inference, LUT/DSP 사용량, timing/Fmax와 post-synthesis
+area는 아직 측정하지 않았다.
 
 ## ExSIA 경계
 
@@ -146,12 +165,12 @@ Rust 참조 구현은 향후 BSV 구현을 위한 의미 체계 계약이다. AQ
 * 양자화된 Candle 가중치는 기존 CPU/CUDA/Metal `QStorage`에 남아 있으며, `QStorage::Aqua`는 없다.
 * 밀집 Q 전용 재구성은 손실이 있으며 잔차를 추가하지 않는다.
 * RaCo 균형형 기수, 논리 스트라이프 작업, 정수 가중치 코드 실행, 기수 합성, 직접적인 정확 동등성 테스트가 구현되어 있다.
-* Q8_HP1 GGUF 프로파일 감지, 로드 가로채기, 정규 가중치 추출, 블록 좌측 시프트 통계, 행 스케일 통계가 구현되어 있다.
+* Q8_HP1 GGUF 프로파일 감지, 로드 가로채기, 정규 가중치 추출, 직접적인 블록 LEFT-shift 통계와 행 RIGHT-shift 통계가 구현되어 있다.
 * 리소스를 고려하는 Rust 매크로 타일 선택과 활성화 계획 생성이 구현되어 있다. BSV 스케줄러는 스트라이프를 부분적인 DIM 경계 배열 작업으로 확장하고, K를 정규 너비 32 블록 경계 조각으로 분할한다.
 * BSV 메모리 기반은 타입이 지정된 로컬 주소, 별도의 뱅크형 활성화 및 가중치 스크래치패드, HP1 메타데이터, 광폭 누산, 응답 백프레셔가 적용된 읽기 및 쓰기를 구현한다.
 * 태그가 지정된 BSV 로드/스토어 스테이징은 활성화, 정규 `[J][K]` 가중치 코드, J 열별 HP1 블록/행 메타데이터, 원시 누산기 출력, 요청 소비 후 최소 한 사이클 뒤의 공급자 응답, 확인 응답으로 제어되는 완료를 포괄한다.
 * 완전한 Candle RaCo 실행기, ExSIF 스케일 통합, 물리 패킷 형식 또는 가속기 상주 RaCo 스토리지는 없다.
-* 모델 컴파일된 블록 시프트 LUT, 물리 공급자 어댑터, 가중치 이미지, HP1 정수 실행 경로 또는 RaCo/가중치 스케일 병합은 없다.
+* 직접적인 HP1 block LEFT-shift 및 row RIGHT-shift 메타데이터 저장은 구현되어 있지만, 해당 정수 시프트 산술 유닛, 물리 공급자 어댑터, 가중치 이미지 또는 RaCo/가중치 스케일 병합은 없다.
 * WS 시스톨릭 배열과 PE 프리로드/재정렬은 연기되었으며, 이 기반에는 행렬 데이터패스 통합이 없다.
 * BSV ExSIA 및 BSV RaCo 실행은 비트 단위 정확한 데이터패스 단계로 연기되어 있다.
 * `AquaLoopMatmul`의 매크로 K 순회, 두 컨텍스트 로드/실행 중첩, 슬롯 할당과 물리 DMA는 연기되어 있다. 아직 구현되지 않은 슬롯 또는 매크로 K 상태는 현재 BSV 계약에 포함하지 않는다. 공급자 인터페이스는 논리적 시뮬레이션 경계이며, 상호 연결 구현이 아니다.
@@ -194,9 +213,10 @@ make -C hw/bsv verify
 
 ## 로드맵
 
-1. 정규 `[J][K]` 공급자 의미를 변경하지 않고 가중치 고정형 시스톨릭 배열과 PE 프리로드 재정렬을 이식하고 검증한다.
-2. 모델 컴파일된 블록 시프트 LUT와 HP1 정수 실행 유닛을 추가한다.
-3. BSV ExSIA 및 RaCo 데이터패스를 구현하고 비트 단위로 정확하게 검증한다.
-4. `AquaLoopMatmul`의 두 컨텍스트 로드/실행/스토어 중첩을 추가한다.
-5. 태그가 지정된 공급자 경계 아래에 물리 DMA 어댑터를 연결한다.
-6. RaCo/ExSIF 스케일링, 비선형 트랜스포머 연산, 가속기 상주 텐서를 통합한다.
+1. `AquaLoopMatmul`로 Rust `k_tile_elements`를 RTL 매크로 K 순회와 `WorkScheduler` 입력 범위에 연결한다.
+2. 정규 `[J][K]` 공급자 의미를 유지하며 WS SystolicArray와 PE preload/reordering을 이식한다.
+3. HP1 block LEFT-shift 및 row RIGHT-shift 정수 실행 유닛을 추가한다.
+4. BSV ExSIA 데이터패스를 구현하고 비트 단위로 검증한다.
+5. BSV RaCo 데이터패스를 구현하고 비트 단위로 검증한다.
+6. 두 실행 컨텍스트의 double-buffer load/execute/store overlap을 추가한다.
+7. 태그가 지정된 공급자 경계 아래에 physical DMA adapter를 연결한다.

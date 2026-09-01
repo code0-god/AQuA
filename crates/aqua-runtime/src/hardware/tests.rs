@@ -1,14 +1,21 @@
 use super::*;
 use aqua_protocol::AQUA_BLOCK_SIZE;
 
+const DEFAULT_HP1_META: Hp1MetaGeometry = Hp1MetaGeometry {
+    block_entries: 4096,
+    row_entries: 4096,
+    left_shift_bits: 16,
+    row_right_shift_bits: 16,
+};
+
 fn complete_builder(array_dim: usize) -> AquaHardwareGeometryBuilder {
     AquaHardwareGeometry::builder(array_dim)
         .activation_spad(4, 1024)
         .weight_spad(4, 1024)
-        .accumulator(2, 512)
+        .accumulator(array_dim, 512)
         .exsia_slots(2, 1 << 20)
         .element_bits(8, 8, 32)
-        .hp1_metadata(1 << 20, 16, 16)
+        .hp1_metadata(DEFAULT_HP1_META)
         .exsia_layout(32, 16, 32)
 }
 
@@ -66,10 +73,10 @@ fn rejects_zero_memory_geometry() {
     let builder = AquaHardwareGeometry::builder(16)
         .activation_spad(0, 1024)
         .weight_spad(4, 1024)
-        .accumulator(2, 512)
+        .accumulator(16, 512)
         .exsia_slots(2, 1 << 20)
         .element_bits(8, 8, 32)
-        .hp1_metadata(1 << 20, 16, 16)
+        .hp1_metadata(DEFAULT_HP1_META)
         .exsia_layout(32, 16, 32);
 
     // When
@@ -93,7 +100,7 @@ fn rejects_incompatible_accumulator_banks() {
         .accumulator(3, 512)
         .exsia_slots(2, 1 << 20)
         .element_bits(8, 8, 32)
-        .hp1_metadata(1 << 20, 16, 16)
+        .hp1_metadata(DEFAULT_HP1_META)
         .exsia_layout(32, 16, 32);
 
     // When
@@ -110,15 +117,103 @@ fn rejects_incompatible_accumulator_banks() {
 }
 
 #[test]
+fn block_shift_width_and_row_shift_width_can_differ() {
+    // Given
+    let metadata = Hp1MetaGeometry {
+        block_entries: 8,
+        row_entries: 4,
+        left_shift_bits: 5,
+        row_right_shift_bits: 4,
+    };
+
+    // When
+    let geometry = complete_builder(16)
+        .hp1_metadata(metadata)
+        .build()
+        .expect("asymmetric HP1 metadata geometry");
+
+    // Then
+    assert_eq!(geometry.hp1_block_metadata_entries(), 8);
+    assert_eq!(geometry.hp1_row_metadata_entries(), 4);
+    assert_eq!(geometry.hp1_left_shift_bits(), 5);
+    assert_eq!(geometry.hp1_row_right_shift_bits(), 4);
+}
+
+#[test]
+fn derives_hp1_metadata_capacity_from_encoded_geometry() {
+    // Given
+    let metadata = Hp1MetaGeometry {
+        block_entries: 8,
+        row_entries: 4,
+        left_shift_bits: 5,
+        row_right_shift_bits: 4,
+    };
+
+    // When
+    let geometry = complete_builder(16)
+        .hp1_metadata(metadata)
+        .build()
+        .expect("HP1 metadata geometry");
+
+    // Then
+    assert_eq!(geometry.hp1_metadata_capacity_bytes(), 128);
+}
+
+#[test]
+fn rejects_dim16_with_eight_accumulator_banks() {
+    // Given
+    let builder = complete_builder(16).accumulator(8, 512);
+
+    // When
+    let error = builder
+        .build()
+        .expect_err("DIM16 requires sixteen accumulator banks");
+
+    // Then
+    assert!(matches!(
+        error,
+        HardwareGeometryError::IncompatibleAccumulatorBanks {
+            array_dim: 16,
+            banks: 8,
+        }
+    ));
+}
+
+#[test]
+fn rejects_dim16_with_two_accumulator_banks() {
+    // Given
+    let builder = complete_builder(16).accumulator(2, 512);
+
+    // When
+    let error = builder
+        .build()
+        .expect_err("DIM16 requires sixteen accumulator banks");
+
+    // Then
+    assert!(matches!(
+        error,
+        HardwareGeometryError::IncompatibleAccumulatorBanks {
+            array_dim: 16,
+            banks: 2,
+        }
+    ));
+}
+
+#[test]
 fn rejects_geometry_capacity_overflow() {
     // Given
     let builder = AquaHardwareGeometry::builder(32)
         .activation_spad(usize::MAX, 2)
         .weight_spad(1, 1)
-        .accumulator(1, 1)
+        .accumulator(32, 1)
         .exsia_slots(1, 1)
         .element_bits(8, 8, 32)
-        .hp1_metadata(1, 16, 16)
+        .hp1_metadata(Hp1MetaGeometry {
+            block_entries: 1,
+            row_entries: 1,
+            left_shift_bits: 16,
+            row_right_shift_bits: 16,
+        })
         .exsia_layout(32, 16, 32);
 
     // When
@@ -148,22 +243,32 @@ fn double_buffering_reduces_usable_capacity() {
     let single_rows = (
         single.usable_activation_spad_rows(),
         single.usable_weight_spad_rows(),
-        single.usable_accumulator_rows(),
+        single.usable_accumulator_rows_per_bank(),
     );
     let double_rows = (
         double.usable_activation_spad_rows(),
         double.usable_weight_spad_rows(),
-        double.usable_accumulator_rows(),
+        double.usable_accumulator_rows_per_bank(),
     );
 
     // Then
     assert_eq!(double_rows.0, single_rows.0 / 2);
     assert_eq!(double_rows.1, single_rows.1 / 2);
     assert_eq!(double_rows.2, single_rows.2 / 2);
+    assert_eq!(
+        single_rows.2,
+        single.accumulator_rows_per_bank(),
+        "single-buffer accumulator capacity is per bank"
+    );
+    assert_eq!(
+        double_rows.2,
+        double.accumulator_rows_per_bank() / 2,
+        "double buffering halves accumulator rows per bank"
+    );
 }
 
 #[test]
-fn supports_dim16() {
+fn accepts_dim16_with_sixteen_accumulator_banks() {
     // Given
     let builder = complete_builder(16);
 
@@ -172,10 +277,11 @@ fn supports_dim16() {
 
     // Then
     assert_eq!(geometry.array_dim(), 16);
+    assert_eq!(geometry.accumulator_banks(), 16);
 }
 
 #[test]
-fn supports_dim32() {
+fn accepts_dim32_with_thirty_two_accumulator_banks() {
     // Given
     let builder = complete_builder(32);
 
@@ -184,10 +290,11 @@ fn supports_dim32() {
 
     // Then
     assert_eq!(geometry.array_dim(), 32);
+    assert_eq!(geometry.accumulator_banks(), 32);
 }
 
 #[test]
-fn supports_dim64() {
+fn accepts_dim64_with_sixty_four_accumulator_banks() {
     // Given
     let builder = complete_builder(64);
 
@@ -196,4 +303,5 @@ fn supports_dim64() {
 
     // Then
     assert_eq!(geometry.array_dim(), 64);
+    assert_eq!(geometry.accumulator_banks(), 64);
 }

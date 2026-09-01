@@ -8,8 +8,10 @@ pub(super) struct ResourceUsage {
     pub(super) k_tile_elements: usize,
     pub(super) activation_spad_rows: usize,
     pub(super) weight_spad_rows: usize,
+    pub(super) hp1_block_metadata_entries: usize,
+    pub(super) hp1_row_metadata_entries: usize,
     pub(super) hp1_metadata_bytes: usize,
-    pub(super) accumulator_rows: usize,
+    pub(super) accumulator_rows_per_bank: usize,
     pub(super) exsia_slot_bytes: usize,
 }
 
@@ -30,14 +32,24 @@ pub(super) fn resource_usage(
     let stripe_rows = factor_extent(factors.i(), geometry.array_dim(), shape.m())?;
     let n_tile_columns = factor_extent(factors.j(), geometry.array_dim(), shape.n())?;
     let k_tile_elements = factor_extent(factors.k(), geometry.array_dim(), shape.k())?;
+    let hp1_row_metadata_entries = n_tile_columns.div_ceil(geometry.array_dim());
+    let hp1_block_metadata_entries = checked_product(
+        &[
+            k_tile_elements.div_ceil(AQUA_BLOCK_SIZE),
+            hp1_row_metadata_entries,
+        ],
+        "HP1 block metadata entries",
+    )?;
     Ok(ResourceUsage {
         stripe_rows,
         n_tile_columns,
         k_tile_elements,
         activation_spad_rows: total_activation_spad_rows(factors, geometry)?,
         weight_spad_rows: total_weight_spad_rows(factors, geometry)?,
+        hp1_block_metadata_entries,
+        hp1_row_metadata_entries,
         hp1_metadata_bytes: hp1_metadata_bytes(n_tile_columns, k_tile_elements, geometry)?,
-        accumulator_rows: total_accumulator_rows(factors, geometry)?,
+        accumulator_rows_per_bank: accumulator_rows_per_bank(factors, geometry)?,
         exsia_slot_bytes: exsia_slot_bytes(stripe_rows, shape.k(), geometry)?,
     })
 }
@@ -50,9 +62,11 @@ pub(super) fn limiting_resource(
         Some(LimitingResource::ActivationSpad)
     } else if usage.weight_spad_rows > geometry.usable_weight_spad_rows() {
         Some(LimitingResource::WeightSpad)
-    } else if usage.accumulator_rows > geometry.usable_accumulator_rows() {
+    } else if usage.accumulator_rows_per_bank > geometry.usable_accumulator_rows_per_bank() {
         Some(LimitingResource::Accumulator)
-    } else if usage.hp1_metadata_bytes > geometry.hp1_metadata_capacity_bytes() {
+    } else if usage.hp1_block_metadata_entries > geometry.hp1_block_metadata_entries()
+        || usage.hp1_row_metadata_entries > geometry.hp1_row_metadata_entries()
+    {
         Some(LimitingResource::Hp1Metadata)
     } else if usage.exsia_slot_bytes > geometry.exsia_slot_bytes() {
         Some(LimitingResource::ExsiaStripeSlot)
@@ -81,7 +95,7 @@ fn total_weight_spad_rows(
     )
 }
 
-fn total_accumulator_rows(
+fn accumulator_rows_per_bank(
     factors: TileFactors,
     geometry: AquaHardwareGeometry,
 ) -> Result<usize, TilingError> {
@@ -97,12 +111,19 @@ fn hp1_metadata_bytes(
     geometry: AquaHardwareGeometry,
 ) -> Result<usize, TilingError> {
     let blocks = k_tile_elements.div_ceil(AQUA_BLOCK_SIZE);
+    let block_scale_bits =
+        geometry
+            .hp1_left_shift_bits()
+            .checked_add(1)
+            .ok_or(TilingError::ArithmeticOverflow {
+                calculation: "HP1 block scale width",
+            })?;
     let block_bits = checked_product(
-        &[blocks, n_tile_columns, geometry.hp1_block_shift_bits()],
+        &[blocks, n_tile_columns, block_scale_bits],
         "HP1 block metadata bits",
     )?;
     let row_bits = n_tile_columns
-        .checked_mul(geometry.hp1_row_shift_bits())
+        .checked_mul(geometry.hp1_row_right_shift_bits())
         .ok_or(TilingError::ArithmeticOverflow {
             calculation: "HP1 row metadata bits",
         })?;

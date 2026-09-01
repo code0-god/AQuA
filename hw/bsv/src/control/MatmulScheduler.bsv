@@ -147,6 +147,32 @@ function Maybe#(WorkPosition) nextWorkPosition(
     end
 endfunction
 
+function Bool validDescriptor(AquaMatmulDescriptor descriptor);
+    return
+        descriptor.m > 0
+        && descriptor.n > 0
+        && descriptor.k > 0
+        && descriptor.stripeRows > 0
+        && descriptor.stripeRows <= descriptor.m
+        && descriptor.macroNTileColumns > 0
+        && descriptor.macroNTileColumns <= descriptor.n;
+endfunction
+
+function Bool validPublishedStripe(
+    AquaMatmulDescriptor descriptor,
+    ActivationStripe stripe,
+    StripeId expectedStripeId,
+    MatrixExtent publishedUntil
+);
+    return
+        stripe.stripeId == expectedStripeId
+        && stripe.rowBegin == publishedUntil
+        && stripe.rowCount > 0
+        && stripe.rowCount <= descriptor.stripeRows
+        && stripe.rowBegin < descriptor.m
+        && stripe.rowCount <= descriptor.m - stripe.rowBegin;
+endfunction
+
 
 interface MatmulSchedulerIfc#(numeric type arrayDim);
     method Bool startReady;
@@ -201,41 +227,37 @@ module mkMatmulScheduler(MatmulSchedulerIfc#(arrayDim));
             && !isValid(stripeLookahead)
             && !completions.notEmpty
         );
-        dynamicAssert(descriptor.m > 0, "matmul M must be positive");
-        dynamicAssert(descriptor.n > 0, "matmul N must be positive");
-        dynamicAssert(descriptor.k > 0, "matmul K must be positive");
-        dynamicAssert(descriptor.stripeRows > 0, "stripe rows must be positive");
-        dynamicAssert(
-            descriptor.macroNTileColumns > 0,
-            "macro N tile must be positive"
-        );
+        Bool valid = validDescriptor(descriptor);
+        dynamicAssert(valid, "invalid matmul descriptor");
 
-        activeDescriptor <= tagged Valid descriptor;
-        publishedUntil <= 0;
-        nextStripeId <= 0;
-        workPosition <= WorkPosition {
-            macroNStart: 0,
-            iStart: 0,
-            jStart: 0
-        };
+        if (valid) begin
+            activeDescriptor <= tagged Valid descriptor;
+            publishedUntil <= 0;
+            nextStripeId <= 0;
+            workPosition <= WorkPosition {
+                macroNStart: 0,
+                iStart: 0,
+                jStart: 0
+            };
 
-        if (descriptor.mode == FullMatrix) begin
-            ActivationStripe first = makeFullStripe(descriptor, 0, 0);
-            MatrixExtent nextBegin = first.rowBegin + first.rowCount;
-            Maybe#(ActivationStripe) next = tagged Invalid;
-            if (nextBegin < descriptor.m) begin
-                next = tagged Valid makeFullStripe(
-                    descriptor,
-                    1,
-                    nextBegin
-                );
+            if (descriptor.mode == FullMatrix) begin
+                ActivationStripe first = makeFullStripe(descriptor, 0, 0);
+                MatrixExtent nextBegin = first.rowBegin + first.rowCount;
+                Maybe#(ActivationStripe) next = tagged Invalid;
+                if (nextBegin < descriptor.m) begin
+                    next = tagged Valid makeFullStripe(
+                        descriptor,
+                        1,
+                        nextBegin
+                    );
+                end
+                activeStripe <= tagged Valid first;
+                stripeLookahead <= next;
             end
-            activeStripe <= tagged Valid first;
-            stripeLookahead <= next;
-        end
-        else begin
-            activeStripe <= tagged Invalid;
-            stripeLookahead <= tagged Invalid;
+            else begin
+                activeStripe <= tagged Invalid;
+                stripeLookahead <= tagged Invalid;
+            end
         end
     endmethod
 
@@ -259,6 +281,12 @@ module mkMatmulScheduler(MatmulSchedulerIfc#(arrayDim));
             )
         );
         let descriptor = fromMaybe(?, activeDescriptor);
+        Bool valid = validPublishedStripe(
+            descriptor,
+            stripe,
+            nextStripeId,
+            publishedUntil
+        );
         UInt#(33) rowEndWide =
             zeroExtend(stripe.rowBegin)
             + zeroExtend(stripe.rowCount);
@@ -283,20 +311,22 @@ module mkMatmulScheduler(MatmulSchedulerIfc#(arrayDim));
             stripe.rowCount <= descriptor.stripeRows,
             "stripe exceeds planned row count"
         );
-        MatrixExtent rowEnd = truncate(rowEndWide);
-        if (!isValid(activeStripe)) begin
-            activeStripe <= tagged Valid stripe;
-            workPosition <= WorkPosition {
-                macroNStart: 0,
-                iStart: stripe.rowBegin,
-                jStart: 0
-            };
+        if (valid) begin
+            MatrixExtent rowEnd = stripe.rowBegin + stripe.rowCount;
+            if (!isValid(activeStripe)) begin
+                activeStripe <= tagged Valid stripe;
+                workPosition <= WorkPosition {
+                    macroNStart: 0,
+                    iStart: stripe.rowBegin,
+                    jStart: 0
+                };
+            end
+            else begin
+                stripeLookahead <= tagged Valid stripe;
+            end
+            publishedUntil <= rowEnd;
+            nextStripeId <= nextStripeId + 1;
         end
-        else begin
-            stripeLookahead <= tagged Valid stripe;
-        end
-        publishedUntil <= rowEnd;
-        nextStripeId <= nextStripeId + 1;
     endmethod
 
     method Bool workValid =

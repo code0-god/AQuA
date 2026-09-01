@@ -26,6 +26,45 @@ impl ExsiaSlotLayout {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Hp1MetaGeometry {
+    /// Number of array-wide block-scale vectors resident in hardware.
+    pub block_entries: usize,
+    /// Number of array-wide row-shift vectors resident in hardware.
+    pub row_entries: usize,
+    /// Bit width of `leftShift`; encoded block scales use one extra `zeroBlock` bit.
+    pub left_shift_bits: usize,
+    /// Bit width of the row-level right-shift magnitude.
+    pub row_right_shift_bits: usize,
+}
+
+impl Hp1MetaGeometry {
+    fn capacity_bytes(self, array_dim: usize) -> Result<usize, HardwareGeometryError> {
+        let overflow = HardwareGeometryError::CapacityOverflow {
+            resource: "hp1_metadata",
+        };
+        let block_scale_bits = self
+            .left_shift_bits
+            .checked_add(1)
+            .ok_or_else(|| overflow.clone())?;
+        let block_bits = self
+            .block_entries
+            .checked_mul(array_dim)
+            .and_then(|entries| entries.checked_mul(block_scale_bits))
+            .ok_or_else(|| overflow.clone())?;
+        let row_bits = self
+            .row_entries
+            .checked_mul(array_dim)
+            .and_then(|entries| entries.checked_mul(self.row_right_shift_bits))
+            .ok_or_else(|| overflow.clone())?;
+        block_bits
+            .checked_add(row_bits)
+            .and_then(|bits| bits.checked_add(7))
+            .map(|bits| bits / 8)
+            .ok_or(overflow)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct AquaHardwareGeometry {
     array_dim: usize,
     activation_spad_banks: usize,
@@ -40,8 +79,7 @@ pub struct AquaHardwareGeometry {
     activation_element_bits: usize,
     weight_element_bits: usize,
     accumulator_element_bits: usize,
-    hp1_block_shift_bits: usize,
-    hp1_row_shift_bits: usize,
+    hp1_meta: Hp1MetaGeometry,
     exsia_layout: ExsiaSlotLayout,
     double_buffer_activation: bool,
     double_buffer_weight: bool,
@@ -105,12 +143,24 @@ impl AquaHardwareGeometry {
         self.accumulator_element_bits
     }
 
-    pub const fn hp1_block_shift_bits(self) -> usize {
-        self.hp1_block_shift_bits
+    pub const fn hp1_block_metadata_entries(self) -> usize {
+        self.hp1_meta.block_entries
     }
 
-    pub const fn hp1_row_shift_bits(self) -> usize {
-        self.hp1_row_shift_bits
+    pub const fn hp1_row_metadata_entries(self) -> usize {
+        self.hp1_meta.row_entries
+    }
+
+    pub const fn hp1_left_shift_bits(self) -> usize {
+        self.hp1_meta.left_shift_bits
+    }
+
+    pub const fn hp1_row_right_shift_bits(self) -> usize {
+        self.hp1_meta.row_right_shift_bits
+    }
+
+    pub const fn hp1_meta_geometry(self) -> Hp1MetaGeometry {
+        self.hp1_meta
     }
 
     pub const fn exsia_layout(self) -> ExsiaSlotLayout {
@@ -149,8 +199,11 @@ impl AquaHardwareGeometry {
         usable_rows(self.weight_spad_rows(), self.double_buffer_weight)
     }
 
-    pub const fn usable_accumulator_rows(self) -> usize {
-        usable_rows(self.accumulator_rows(), self.double_buffer_accumulator)
+    pub const fn usable_accumulator_rows_per_bank(self) -> usize {
+        usable_rows(
+            self.accumulator_rows_per_bank,
+            self.double_buffer_accumulator,
+        )
     }
 }
 
@@ -188,7 +241,7 @@ impl fmt::Display for HardwareGeometryError {
             }
             Self::IncompatibleAccumulatorBanks { array_dim, banks } => write!(
                 formatter,
-                "accumulator banks {banks} do not divide array dimension {array_dim}"
+                "accumulator banks {banks} must equal array dimension {array_dim}"
             ),
             Self::CapacityOverflow { resource } => {
                 write!(formatter, "{resource} capacity calculation overflow")
