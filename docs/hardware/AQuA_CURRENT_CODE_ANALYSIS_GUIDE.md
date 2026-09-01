@@ -463,14 +463,17 @@ accumulator_rows_per_bank
 exsia_slot_count
 exsia_slot_bytes
 
-hp1_metadata_capacity_bytes
+hp1_meta:
+    block_entries
+    row_entries
+    left_shift_bits
+    row_right_shift_bits
+
+derived hp1_metadata_capacity_bytes
 
 activation_element_bits
 weight_element_bits
 accumulator_element_bits
-
-hp1_block_shift_bits
-hp1_row_shift_bits
 
 double_buffer_activation
 double_buffer_weight
@@ -507,15 +510,14 @@ usable = rows / 2
 
 #### 3. accumulator bank validation
 
-Rust에서는:
+현재 첫 하드웨어 계약은 output J lane마다 하나의 accumulator bank를
+사용하므로 다음을 요구한다.
 
 ```text
-accumulator_banks가 array_dim을 나눌 수 있음
+accumulator_banks == array_dim
 ```
 
-을 허용한다.
-
-이 부분은 이후 BSV top parameter와 대조해서 다시 본다.
+bank modulo 및 row folding은 향후 최적화다.
 
 GitHub:
 
@@ -574,8 +576,10 @@ k_tile_elements
 
 activation_spad_rows
 weight_spad_rows
+hp1_block_metadata_entries
+hp1_row_metadata_entries
 hp1_metadata_bytes
-accumulator_rows
+accumulator_rows_per_bank
 exsia_slot_bytes
 ```
 
@@ -625,6 +629,9 @@ macro K/J weight residency
 tile_i × tile_j × DIM
 ```
 
+이는 현재 direct J-lane bank mapping에서 필요한 **뱅크별 row 수**다.
+double buffering이면 usable row 수도 각 bank에서 절반이 된다.
+
 ---
 
 ## 5.5 HP1 metadata
@@ -637,14 +644,25 @@ blocks = ceil(k_tile_elements / 32)
 block metadata:
     blocks
     × n_tile_columns
-    × block_shift_bits
+    × (1 + hp1_left_shift_bits)
 
 row metadata:
     n_tile_columns
-    × row_shift_bits
+    × hp1_row_right_shift_bits
+
+J groups:
+    ceil(n_tile_columns / DIM)
+
+block entries:
+    blocks × J groups
+
+row entries:
+    J groups
 ```
 
-여기서 HP1 metadata는 weight Scratchpad와 별도의 capacity다.
+추가 1 bit는 `zeroBlock`이다. block LEFT-shift와 row RIGHT-shift width,
+그리고 두 memory depth는 서로 독립적이다. HP1 metadata는 weight
+Scratchpad와 별도의 capacity다.
 
 ---
 
@@ -1226,13 +1244,17 @@ mkTbStoreController
 mkTbAquaMemorySubsystem
 ```
 
-expected-failure top 9개:
+expected-failure top 13개:
 
 ```text
 mkTbAccumulatorOverflow
 mkTbMatmulStripeGap
 mkTbMatmulStripeOverlap
 mkTbMatmulStripeOutOfBounds
+mkTbMatmulInvalidDescriptor
+mkTbMatmulWrongStripeId
+mkTbHp1BlockDepthOverflow
+mkTbHp1RowDepthOverflow
 mkTbActivationLoadDepthOverflow
 mkTbWeightLoadDepthOverflow
 mkTbActivationResponseMaskMismatch
@@ -1240,22 +1262,27 @@ mkTbWeightResponseMaskMismatch
 mkTbMetadataResponseMaskMismatch
 ```
 
-assertions-disabled RTL safety top 4개:
+assertions-disabled RTL safety top 5개:
 
 ```text
 mkTbLoadInvalidWorkGate
 mkTbStoreInvalidWorkGate
 mkTbAccumulatorOverflowGate
 mkTbWorkRangeOverflowGate
+mkTbMatmulInvalidInputGate
 ```
 
-synthesis top 3개:
+BSC RTL generation top 3개:
 
 ```text
 mkMemorySynthTop
 mkSchedulerSynthTop
 mkMemorySubsystemSynthTop
 ```
+
+이 top들은 BSC Verilog 생성까지 검증한다. BRAM inference, LUT/DSP 사용량,
+timing/Fmax 및 post-synthesis area를 포함하는 물리 FPGA synthesis는 아직
+검증하지 않았다.
 
 ```bash
 make -C hw/bsv bsv-test-one TOP=mkTbMatmulScheduler

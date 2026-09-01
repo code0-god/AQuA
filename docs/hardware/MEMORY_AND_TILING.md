@@ -66,7 +66,7 @@ k_fragment_count =
     min(array_dim, remaining_logical_k, remaining_in_block)
 ```
 
-Rust 타일 계획의 `macro_k_elements`는 32를 초과할 수 있다. 그러나 현재
+Rust 타일 계획의 `k_tile_elements`는 32를 초과할 수 있다. 그러나 현재
 BSV에는 매크로 K 식별자나 순회 상태가 없다. `MatmulScheduler`가 만든
 `ArrayWork`는 전체 논리 K 범위를 전달하고, `WorkScheduler`는 그 범위를
 블록 경계로 제한된 프래그먼트로 분해한다.
@@ -94,11 +94,10 @@ Rust는 계속 매크로 K 후보를 선택하고 용량을 계산한다. 이를
 
 - 물리 배열 차원;
 - 서로 독립적인 활성값 및 가중치 스크래치패드 뱅크와 행;
-- 바이트 단위의 전용 HP1 메타데이터 용량;
-- 누산기 뱅크와 행;
+- 독립적인 HP1 block/row metadata depth와 LEFT/RIGHT shift width;
+- `array_dim`과 같은 누산기 뱅크 수 및 뱅크별 행;
 - ExSIA 슬롯 개수와 바이트;
 - 활성값, 가중치 및 누산기 원소 너비;
-- HP1 블록 시프트 및 행 스케일 너비;
 - 독립적인 이중 버퍼 활성화 여부.
 
 `AquaTileSelector`는 Gemmini의 J, I, K 순서 탐욕적 확장 방식을 유지하되
@@ -109,12 +108,35 @@ Rust는 계속 매크로 K 후보를 선택하고 용량을 계산한다. 이를
 메타데이터는
 가중치 코드 저장소의 명시되지 않은 잔여 공간을 사용할 수 없다.
 
-`Hp1MetaMem`의 한 block-scale row는 J 열마다
-`Hp1BlockScale#(shift_width)` 하나를 갖는 `array_dim` lane 벡터다.
-각 lane은 `ZeroBlock` 또는 `LeftShift`를 보존한다. 한 row-shift row도
-J 열마다 `UInt#(shift_width)` 하나를 갖는 벡터다. 부분 J 응답의 마스크는
-요청한 열만 갱신하고 비활성 lane을 보존한다. Rust의 바이트 단위
-메타데이터 용량은 아직 BSV의 `metaEntries`와 자동으로 연결되지 않는다.
+`Hp1MetaMem`의 한 block-scale entry는 J 열마다
+`Hp1BlockScale#(blockShiftWidth)` 하나를 갖는 `array_dim` lane 벡터다.
+각 lane은 `zeroBlock` 1 bit와 block LEFT-shift magnitude를 직접 보존하므로
+encoded width는 `1 + blockShiftWidth`다. 한 row-shift entry는 J 열마다
+`UInt#(rowShiftWidth)` 하나를 갖고 row RIGHT-shift magnitude를 직접
+보존한다. 부분 J 응답의 마스크는 요청한 열만 갱신하고 비활성 lane을
+보존한다.
+
+Rust와 BSV는 다음 depth 단위를 공유한다.
+
+```text
+j_groups = ceil(n_tile_columns / array_dim)
+block metadata entries = ceil(k_tile_elements / 32) * j_groups
+row metadata entries   = j_groups
+```
+
+Rust의 required metadata byte 계산은 논리 J 열 수를 사용한다.
+
+```text
+block bits = ceil(k_tile_elements / 32)
+             * n_tile_columns
+             * (1 + hp1_left_shift_bits)
+row bits   = n_tile_columns * hp1_row_right_shift_bits
+bytes      = ceil((block bits + row bits) / 8)
+```
+
+`Hp1MetaGeometry`의 block/row entry depth와 두 width는 BSV elaboration
+parameter와 같은 물리 기하를 표현하며, 물리 byte capacity도 이 값에서
+checked arithmetic으로 파생된다.
 
 BSV 최상위 매개변수는 다음 기하를 서로 독립적으로 전달한다.
 
@@ -122,16 +144,18 @@ BSV 최상위 매개변수는 다음 기하를 서로 독립적으로 전달한�
 activationBanks / activationRows
 weightBanks     / weightRows
 accumulatorBanks / accumulatorRows
-metaEntries
+blockMetaEntries / rowMetaEntries
+blockShiftWidth / rowShiftWidth
 ```
 
 `AquaLocalAddr`의 고정 주소 폭 때문에 각 bank count는 최대 256, 각 row
-count와 `metaEntries`는 최대 65,536이다. controller elaboration은 이 범위를
-정적으로 검사한다.
+count와 두 metadata entry count는 최대 65,536이다. controller elaboration은
+이 범위를 정적으로 검사한다.
 
-따라서 활성값과 가중치가 같은 뱅크 수나 깊이를 가져야 한다는 계약도,
-누산기 뱅크 수가 배열 차원과 같아야 한다는 계약도 없다. 각 컨트롤러는
-자신이 사용하는 메모리 기하에 대해서만 주소를 검증한다.
+활성값과 가중치는 같은 뱅크 수나 깊이를 가질 필요가 없다. 반면 현재 첫
+하드웨어 계약은 출력 J lane마다 하나의 누산기 bank를 사용하므로
+`accumulator_banks == array_dim`을 요구한다. logical J를 modulo bank와
+folded row로 바꾸는 bank folding은 구현하지 않는다.
 
 `AquaTilePlan`은 선택된 계수, 구체적인 논리 범위, 패딩된 K,
 그리고 리소스 사용량을 유지한다. 해당 스트라이프 행은 기존의 검증된
@@ -144,6 +168,13 @@ count와 `metaEntries`는 최대 65,536이다. controller elaboration은 이 범
 서로 다른 유효 계획이 선택되어 표준 스트라이프 결과도 달라질 수 있다.
 동일한 기하 구조와 형상으로 다시 실행하면 반드시 동일한 계획이 선택되어야
 한다.
+
+## RTL 생성과 물리 합성
+
+현재 gate는 positive Bluesim, expected-failure, assertions-disabled safety
+test와 대표 top의 BSC Verilog 생성을 포함한다. 이 결과는 RTL elaboration과
+생성을 검증하지만 물리 FPGA synthesis를 검증하지 않는다. BRAM inference,
+LUT/DSP 사용량, timing/Fmax 및 post-synthesis area는 아직 측정하지 않았다.
 
 ## 메모리 수명
 
