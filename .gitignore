@@ -1,4 +1,5 @@
 /target/
+/hw/bsv/build/
 *.bo
 *.ba
 *.so
