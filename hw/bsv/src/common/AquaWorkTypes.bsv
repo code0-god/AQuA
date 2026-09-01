@@ -83,6 +83,42 @@ typedef struct {
     Bool accumulate;
 } KFragment deriving (Bits, Eq, FShow);
 
+// 한 K fragment의 scratchpad 소비와 accumulator contribution 요청.
+typedef struct {
+    MatmulJobId jobId;
+    StripeId stripeId;
+    ArrayWorkId arrayWorkId;
+    KFragmentId fragmentId;
+
+    MatrixExtent iStart;
+    ArrayCount iCount;
+
+    MatrixExtent jStart;
+    ArrayCount jCount;
+
+    MatrixExtent fragmentKStart;
+    ArrayCount fragmentKCount;
+    MatrixExtent fragmentBlockIndex;
+    Bool fragmentEndsBlock;
+
+    AquaLocalAddr activationBase;
+    AquaLocalAddr weightBase;
+    AquaLocalAddr blockShiftAddress;
+    AquaLocalAddr rowShiftAddress;
+    AquaLocalAddr accumulatorBase;
+
+    Bool accumulate;
+} ExecuteWork#(numeric type arrayDim)
+    deriving (Bits, Eq, FShow);
+
+// 해당 fragment의 accumulator contribution commit 완료.
+typedef struct {
+    MatmulJobId jobId;
+    StripeId stripeId;
+    ArrayWorkId arrayWorkId;
+    KFragmentId fragmentId;
+} ExecuteCompletion deriving (Bits, Eq, FShow);
+
 
 // 하나의 stripe가 완전히 처리되었음을 상위 계층에 전달.
 typedef struct {
