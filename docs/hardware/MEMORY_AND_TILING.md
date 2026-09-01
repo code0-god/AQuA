@@ -304,13 +304,16 @@ Gemmini의 루프 컨텍스트는 향후 `AquaLoopMatmul`의 필요성을 제시
 ```
 
 현재 기반은 로드, 스케줄, 저장 컨트롤러를 분리하지만 슬롯, 컨텍스트
-승격, 동시 이중 버퍼 실행 또는 매크로 K 순회를 표현하지 않는다. 다음
-조건이 모두 구현될 때 해당 계약을 다시 도입한다.
+승격, 동시 이중 버퍼 실행 또는 매크로 K 순회를 표현하지 않는다.
+production tiled execution의 다음 단계는 `AquaLoopMatmul`이 Rust
+`k_tile_elements`를 실제 `ArrayWork.kTileStart/kTileCount` 범위로 만드는
+것이다. 이후 WS SystolicArray/PE 실행을 이 범위와 통합한다.
 
-- 두 로컬 residency가 실제로 동시에 존재한다.
-- 할당 충돌, 완료 기반 승격, backpressure가 검증된다.
-- `AquaLoopMatmul`이 매크로 K 범위를 생성한다.
-- `ArrayWork.kTileStart/kTileCount`가 그 실제 범위를 전달한다.
+작은 WS arithmetic unit bring-up은 현재 full-logical-K →
+`WorkScheduler` fragment 경로를 임시로 사용할 수 있다. 이는 arithmetic
+unit test 경로이며 production macro-K architecture를 대체하지 않는다.
+두 로컬 residency, 할당 충돌, 완료 기반 승격, backpressure와 double-buffer
+overlap은 그 뒤 별도 단계에서 도입한다.
 
 순회 계층은 서로 분리된 상태로 유지된다.
 

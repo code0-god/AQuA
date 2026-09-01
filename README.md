@@ -113,6 +113,12 @@ RTL의 매크로 K 순회는 아직 구현되지 않았다. 현재 BSV 스케줄
 리소스 인식 계획에 계속 포함되며, `AquaLoopMatmul`이 추가될 때 실제 RTL
 실행 경계가 된다.
 
+작은 WS arithmetic bring-up/test는 현재의 full-logical-K →
+`WorkScheduler` fragment 경로를 임시로 재사용할 수 있다. 이는 unit bring-up
+경로일 뿐 production tiled execution architecture가 아니다. 전체 accelerator
+execution path는 `AquaLoopMatmul`이 Rust `k_tile_elements`를 RTL 매크로 K
+범위로 연결한 뒤 WS/PE 실행과 통합되어야 완료된 것으로 본다.
+
 `LoadController`는 활성 작업과 네 개의 독립적인 활성값, 가중치, block-scale,
 row-shift 단일 outstanding 채널을 소유한다. 각 채널은 종류 판별자가 없는
 타입 지정 요청/응답 포트다. 공급자는 요청을 소비한 다음 사이클부터만 응답할
@@ -207,9 +213,10 @@ make -C hw/bsv verify
 
 ## 로드맵
 
-1. 정규 `[J][K]` 공급자 의미를 변경하지 않고 가중치 고정형 시스톨릭 배열과 PE 프리로드 재정렬을 이식하고 검증한다.
-2. HP1 block LEFT-shift 및 row RIGHT-shift 정수 실행 유닛을 추가한다.
-3. BSV ExSIA 및 RaCo 데이터패스를 구현하고 비트 단위로 정확하게 검증한다.
-4. `AquaLoopMatmul`의 두 컨텍스트 로드/실행/스토어 중첩을 추가한다.
-5. 태그가 지정된 공급자 경계 아래에 물리 DMA 어댑터를 연결한다.
-6. RaCo/ExSIF 스케일링, 비선형 트랜스포머 연산, 가속기 상주 텐서를 통합한다.
+1. `AquaLoopMatmul`로 Rust `k_tile_elements`를 RTL 매크로 K 순회와 `WorkScheduler` 입력 범위에 연결한다.
+2. 정규 `[J][K]` 공급자 의미를 유지하며 WS SystolicArray와 PE preload/reordering을 이식한다.
+3. HP1 block LEFT-shift 및 row RIGHT-shift 정수 실행 유닛을 추가한다.
+4. BSV ExSIA 데이터패스를 구현하고 비트 단위로 검증한다.
+5. BSV RaCo 데이터패스를 구현하고 비트 단위로 검증한다.
+6. 두 실행 컨텍스트의 double-buffer load/execute/store overlap을 추가한다.
+7. 태그가 지정된 공급자 경계 아래에 physical DMA adapter를 연결한다.
