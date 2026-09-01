@@ -85,7 +85,9 @@ module mkLoadStager#(
     LoadControllerIfc#(
         arrayDim,
         activationBanks,
+        activationRows,
         weightBanks,
+        weightRows,
         metaEntries
     ) load
 )(LoadStagerIfc#(
@@ -130,7 +132,8 @@ module mkLoadStager#(
                     LocalActivation,
                     valueOf(activationBanks),
                     valueOf(activationRows)
-                );
+                )
+                && load.dataResponseMaskValid(response.payload.mask);
         endmethod
 
         method Action put(
@@ -140,6 +143,8 @@ module mkLoadStager#(
             UInt#(32) row = localRow(response.tag);
             UInt#(TLog#(activationBanks)) bankIndex = truncate(bank);
             ScratchpadRowAddr#(activationRows) rowAddress = truncate(pack(row));
+            Bool maskValid =
+                load.dataResponseMaskValid(response.payload.mask);
             Bool valid = load.activationPort.responses.ready(response.tag)
                 && validLocalResponse(
                     response.tag,
@@ -147,8 +152,12 @@ module mkLoadStager#(
                     valueOf(activationBanks),
                     valueOf(activationRows)
                 );
+            dynamicAssert(
+                maskValid,
+                "activation response mask does not match requested K count"
+            );
             dynamicAssert(valid, "activation response is not outstanding");
-            if (valid) begin
+            if (valid && maskValid) begin
                 activations.banks[bankIndex].write(
                     rowAddress,
                     response.payload.mask,
@@ -169,7 +178,8 @@ module mkLoadStager#(
                     LocalWeight,
                     valueOf(weightBanks),
                     valueOf(weightRows)
-                );
+                )
+                && load.dataResponseMaskValid(response.payload.mask);
         endmethod
 
         method Action put(
@@ -179,6 +189,8 @@ module mkLoadStager#(
             UInt#(32) row = localRow(response.tag);
             UInt#(TLog#(weightBanks)) bankIndex = truncate(bank);
             ScratchpadRowAddr#(weightRows) rowAddress = truncate(pack(row));
+            Bool maskValid =
+                load.dataResponseMaskValid(response.payload.mask);
             Bool valid = load.weightPort.responses.ready(response.tag)
                 && validLocalResponse(
                     response.tag,
@@ -186,8 +198,12 @@ module mkLoadStager#(
                     valueOf(weightBanks),
                     valueOf(weightRows)
                 );
+            dynamicAssert(
+                maskValid,
+                "weight response mask does not match requested K count"
+            );
             dynamicAssert(valid, "weight response is not outstanding");
-            if (valid) begin
+            if (valid && maskValid) begin
                 weights.banks[bankIndex].write(
                     rowAddress,
                     response.payload.mask,

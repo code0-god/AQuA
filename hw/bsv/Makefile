@@ -7,6 +7,8 @@ BSC_DIRS := -bdir $(BUILD_DIR)/bsc -simdir $(BUILD_DIR)/sim \
             -info-dir $(BUILD_DIR)/info
 BSC_COMMON := -p $(BSC_PATH) $(BSC_DIRS) -check-assert \
               -keep-fires -show-schedule
+BSC_NO_ASSERT := -p $(BSC_PATH) $(BSC_DIRS) \
+                 -keep-fires -show-schedule
 
 BSV_SOURCE_FILES := \
 	src/common/AquaTypes.bsv \
@@ -41,14 +43,25 @@ BSV_EXPECT_FAIL_TOPS := \
 	mkTbMatmulStripeGap \
 	mkTbMatmulStripeOverlap \
 	mkTbMatmulStripeOutOfBounds \
+	mkTbActivationLoadDepthOverflow \
+	mkTbWeightLoadDepthOverflow \
+	mkTbActivationResponseMaskMismatch \
+	mkTbWeightResponseMaskMismatch \
 	mkTbMetadataResponseMaskMismatch
+
+BSV_NO_ASSERT_TEST_TOPS := \
+	mkTbLoadInvalidWorkGate \
+	mkTbStoreInvalidWorkGate \
+	mkTbAccumulatorOverflowGate \
+	mkTbWorkRangeOverflowGate
 
 SYNTH_TOPS := \
 	mkMemorySynthTop \
 	mkSchedulerSynthTop \
 	mkMemorySubsystemSynthTop
 
-.PHONY: check bsv-test bsv-test-one rtl-one verify clean
+.PHONY: check bsv-test bsv-test-one bsv-test-no-assert \
+	bsv-test-no-assert-one rtl-one verify clean
 
 check: | $(BUILD_DIR)/bsc $(BUILD_DIR)/sim $(BUILD_DIR)/info
 	@set -euo pipefail; \
@@ -85,6 +98,10 @@ bsv-test: | $(BUILD_DIR)/bsc $(BUILD_DIR)/sim $(BUILD_DIR)/info $(BUILD_DIR)/bin
 	    mkTbMatmulStripeGap) expected='stripe publication gap' ;; \
 	    mkTbMatmulStripeOverlap) expected='stripe publication overlap' ;; \
 	    mkTbMatmulStripeOutOfBounds) expected='stripe publication out of bounds' ;; \
+	    mkTbActivationLoadDepthOverflow) expected='activation local row exceeds configured rows' ;; \
+	    mkTbWeightLoadDepthOverflow) expected='weight local row exceeds configured rows' ;; \
+	    mkTbActivationResponseMaskMismatch) expected='activation response mask does not match requested K count' ;; \
+	    mkTbWeightResponseMaskMismatch) expected='weight response mask does not match requested K count' ;; \
 	    mkTbMetadataResponseMaskMismatch) expected='metadata response mask does not match requested J count' ;; \
 	    *) echo "missing expected failure text for $$top" >&2; exit 2 ;; \
 	  esac; \
@@ -108,6 +125,28 @@ bsv-test-one: | $(BUILD_DIR)/bsc $(BUILD_DIR)/sim $(BUILD_DIR)/info $(BUILD_DIR)
 	  -o "$(BUILD_DIR)/bin/$$package"; \
 	"$(BUILD_DIR)/bin/$$package"
 
+bsv-test-no-assert: | $(BUILD_DIR)/bsc $(BUILD_DIR)/sim $(BUILD_DIR)/info $(BUILD_DIR)/bin
+	@set -euo pipefail; \
+	for top in $(BSV_NO_ASSERT_TEST_TOPS); do \
+	  package="$${top#mk}"; \
+	  echo "[BSC no-assert] compile $$top"; \
+	  $(BSC) -u -sim $(BSC_NO_ASSERT) -g "$$top" "tb/$$package.bsv"; \
+	  $(BSC) -sim $(BSC_NO_ASSERT) -e "$$top" \
+	    -o "$(BUILD_DIR)/bin/$$package"; \
+	  echo "[Bluesim no-assert] run $$top"; \
+	  "$(BUILD_DIR)/bin/$$package"; \
+	done
+
+bsv-test-no-assert-one: | $(BUILD_DIR)/bsc $(BUILD_DIR)/sim $(BUILD_DIR)/info $(BUILD_DIR)/bin
+	@set -euo pipefail; \
+	top='$(TOP)'; \
+	test -n "$$top" || { echo 'TOP is required' >&2; exit 2; }; \
+	package="$${top#mk}"; \
+	$(BSC) -u -sim $(BSC_NO_ASSERT) -g "$$top" "tb/$$package.bsv"; \
+	$(BSC) -sim $(BSC_NO_ASSERT) -e "$$top" \
+	  -o "$(BUILD_DIR)/bin/$$package"; \
+	"$(BUILD_DIR)/bin/$$package"
+
 rtl-one: | $(BUILD_DIR)/bsc $(BUILD_DIR)/info
 	@set -euo pipefail; \
 	top='$(TOP)'; \
@@ -120,7 +159,7 @@ rtl-one: | $(BUILD_DIR)/bsc $(BUILD_DIR)/info
 	  -bdir $(BUILD_DIR)/bsc -info-dir $(BUILD_DIR)/info \
 	  -vdir "$$out" -g "$$top" "tb/$$package.bsv"
 
-verify: check bsv-test
+verify: check bsv-test bsv-test-no-assert
 	@set -euo pipefail; \
 	for top in $(SYNTH_TOPS); do \
 	  $(MAKE) rtl-one TOP="$$top"; \

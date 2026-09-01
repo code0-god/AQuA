@@ -136,9 +136,14 @@ module mkAccumulatorMem(AccumulatorMemIfc#(banks, rows, accWidth));
         AccumulatorBank#(banks) bank,
         AccumulatorRow#(rows) row
     ) if (readRequests.notFull && !writeAccepted);
+        Bool valid =
+            bank < fromInteger(valueOf(banks))
+            && row < fromInteger(valueOf(rows));
         dynamicAssert(bank < fromInteger(valueOf(banks)), "accumulator read bank out of range");
         dynamicAssert(row < fromInteger(valueOf(rows)), "accumulator read row out of range");
-        readRequests.enq(AccumulatorReadReq { bank: bank, row: row });
+        if (valid) begin
+            readRequests.enq(AccumulatorReadReq { bank: bank, row: row });
+        end
     endmethod
 
     method Bool readValid = readResponses.notEmpty;
@@ -162,37 +167,48 @@ module mkAccumulatorMem(AccumulatorMemIfc#(banks, rows, accWidth));
         Bool accumulate,
         Int#(accWidth) value
     ) if (!isValid(pendingAccumulate) && writeCompletions.notFull);
+        Bool addressValid =
+            bank < fromInteger(valueOf(banks))
+            && row < fromInteger(valueOf(rows));
+        Bool accepted = False;
         dynamicAssert(bank < fromInteger(valueOf(banks)), "accumulator write bank out of range");
         dynamicAssert(row < fromInteger(valueOf(rows)), "accumulator write row out of range");
         for (Integer bankIndex = 0; bankIndex < valueOf(banks); bankIndex = bankIndex + 1) begin
-            if (bank == fromInteger(bankIndex)) begin
+            if (addressValid && bank == fromInteger(bankIndex)) begin
                 if (accumulate) begin
                     Int#(TAdd#(accWidth, 1)) wide =
                         signExtend(memories[bankIndex].sub(row))
                         + signExtend(value);
                     Int#(accWidth) narrowed = truncate(wide);
+                    Bool fits = signExtend(narrowed) == wide;
                     dynamicAssert(
-                        signExtend(narrowed) == wide,
+                        fits,
                         "accumulator addition overflow"
                     );
-                    pendingAccumulate <= tagged Valid AccumulatorPendingWrite {
-                        bank: bank,
-                        row: row,
-                        value: narrowed
-                    };
+                    if (fits) begin
+                        pendingAccumulate <= tagged Valid AccumulatorPendingWrite {
+                            bank: bank,
+                            row: row,
+                            value: narrowed
+                        };
+                        accepted = True;
+                    end
                 end
                 else begin
                     memories[bankIndex].upd(row, value);
+                    accepted = True;
                 end
             end
         end
-        if (!accumulate) begin
+        if (accepted && !accumulate) begin
             writeCompletions.enq(AccumulatorWriteCompletion {
                 bank: bank,
                 row: row
             });
         end
-        writeAccepted.send;
+        if (accepted) begin
+            writeAccepted.send;
+        end
     endmethod
 
     method Bool writeCompleteValid = writeCompletions.notEmpty;

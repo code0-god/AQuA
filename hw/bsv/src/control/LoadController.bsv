@@ -131,13 +131,13 @@ function AquaMemoryReadRequest rowShiftRequest(
     };
 endfunction
 
-function Bool metadataMaskMatches(
+function Bool responseMaskMatches(
     Vector#(arrayDim, Bool) mask,
-    ArrayCount jCount
+    ArrayCount count
 );
     Bool valid = True;
     for (Integer lane = 0; lane < valueOf(arrayDim); lane = lane + 1) begin
-        valid = valid && mask[lane] == (fromInteger(lane) < jCount);
+        valid = valid && mask[lane] == (fromInteger(lane) < count);
     end
     return valid;
 endfunction
@@ -145,7 +145,9 @@ endfunction
 interface LoadControllerIfc#(
     numeric type arrayDim,
     numeric type activationBankCount,
+    numeric type activationRowCount,
     numeric type weightBankCount,
+    numeric type weightRowCount,
     numeric type metaEntries
 );
     method Bool scheduleReady;
@@ -156,6 +158,7 @@ interface LoadControllerIfc#(
     interface ReadPortIfc#(AquaMemoryTag) blockShiftPort;
     interface ReadPortIfc#(AquaMemoryTag) rowShiftPort;
 
+    method Bool dataResponseMaskValid(Vector#(arrayDim, Bool) mask);
     method Bool metadataResponseMaskValid(Vector#(arrayDim, Bool) mask);
 
     method Bool completionValid;
@@ -164,10 +167,78 @@ interface LoadControllerIfc#(
     method UInt#(64) outstandingCycles;
 endinterface
 
+function Bool providerLoadWorkValid(
+    ProviderLoadWork#(arrayDim) work,
+    Integer activationBankCount,
+    Integer activationRowCount,
+    Integer weightBankCount,
+    Integer weightRowCount,
+    Integer metaEntries
+);
+    UInt#(32) iCount = zeroExtend(work.iCount);
+    UInt#(32) jCount = zeroExtend(work.jCount);
+    UInt#(33) iEnd = zeroExtend(work.iStart) + zeroExtend(iCount);
+    UInt#(33) jEnd = zeroExtend(work.jStart) + zeroExtend(jCount);
+    UInt#(33) kEnd =
+        zeroExtend(work.fragmentKStart)
+        + zeroExtend(work.fragmentKCount);
+    UInt#(32) activationBaseBank =
+        zeroExtend(unpack(work.activationBase.bank));
+    UInt#(32) activationBaseRow =
+        zeroExtend(unpack(work.activationBase.row));
+    UInt#(32) weightBaseBank =
+        zeroExtend(unpack(work.weightBase.bank));
+    UInt#(32) weightBaseRow =
+        zeroExtend(unpack(work.weightBase.row));
+    UInt#(40) activationLinearEnd =
+        zeroExtend(activationBaseRow) * fromInteger(activationBankCount)
+        + zeroExtend(activationBaseBank)
+        + zeroExtend(iCount == 0 ? 0 : iCount - 1);
+    UInt#(40) weightLinearEnd =
+        zeroExtend(weightBaseRow) * fromInteger(weightBankCount)
+        + zeroExtend(weightBaseBank)
+        + zeroExtend(jCount == 0 ? 0 : jCount - 1);
+    UInt#(32) blockMetadataBank =
+        zeroExtend(unpack(work.blockShiftDestination.bank));
+    UInt#(32) blockMetadataRow =
+        zeroExtend(unpack(work.blockShiftDestination.row));
+    UInt#(32) rowMetadataBank =
+        zeroExtend(unpack(work.rowScaleDestination.bank));
+    UInt#(32) rowMetadataRow =
+        zeroExtend(unpack(work.rowScaleDestination.row));
+
+    return
+        work.iCount > 0
+        && work.jCount > 0
+        && work.fragmentKCount > 0
+        && work.iCount <= fromInteger(valueOf(arrayDim))
+        && work.jCount <= fromInteger(valueOf(arrayDim))
+        && work.fragmentKCount <= fromInteger(valueOf(arrayDim))
+        && iEnd <= fromInteger(2 ** 32 - 1)
+        && jEnd <= fromInteger(2 ** 32 - 1)
+        && kEnd <= fromInteger(2 ** 32 - 1)
+        && work.activationBase.region == LocalActivation
+        && work.weightBase.region == LocalWeight
+        && activationBaseBank < fromInteger(activationBankCount)
+        && weightBaseBank < fromInteger(weightBankCount)
+        && activationLinearEnd / fromInteger(activationBankCount)
+            < fromInteger(activationRowCount)
+        && weightLinearEnd / fromInteger(weightBankCount)
+            < fromInteger(weightRowCount)
+        && work.blockShiftDestination.region == LocalHp1Meta
+        && work.rowScaleDestination.region == LocalHp1Meta
+        && blockMetadataBank == 0
+        && rowMetadataBank == 0
+        && blockMetadataRow < fromInteger(metaEntries)
+        && rowMetadataRow < fromInteger(metaEntries);
+endfunction
+
 function Action validateProviderLoadWork(
     ProviderLoadWork#(arrayDim) work,
     Integer activationBankCount,
+    Integer activationRowCount,
     Integer weightBankCount,
+    Integer weightRowCount,
     Integer metaEntries
 );
     action
@@ -229,13 +300,13 @@ function Action validateProviderLoadWork(
                       "weight base bank exceeds configured banks");
         dynamicAssert(
             activationLinearEnd / fromInteger(activationBankCount)
-                < fromInteger(2 ** 16),
-            "activation local row range overflow"
+                < fromInteger(activationRowCount),
+            "activation local row exceeds configured rows"
         );
         dynamicAssert(
             weightLinearEnd / fromInteger(weightBankCount)
-                < fromInteger(2 ** 16),
-            "weight local row range overflow"
+                < fromInteger(weightRowCount),
+            "weight local row exceeds configured rows"
         );
         dynamicAssert(work.blockShiftDestination.region == LocalHp1Meta,
                       "block shift has wrong local region");
@@ -255,7 +326,9 @@ endfunction
 module mkLoadController(LoadControllerIfc#(
     arrayDim,
     activationBankCount,
+    activationRowCount,
     weightBankCount,
+    weightRowCount,
     metaEntries
 )) provisos (
     Add#(activationLanePadding, TLog#(arrayDim), 32),
@@ -285,6 +358,31 @@ module mkLoadController(LoadControllerIfc#(
         || valueOf(arrayDim) == 32
         || valueOf(arrayDim) == 64,
         "load controller array dimension must be 16, 32, or 64"
+    );
+    staticAssert(
+        valueOf(activationBankCount) > 0
+        && valueOf(activationBankCount) <= 2 ** 8,
+        "activation bank count exceeds local address width"
+    );
+    staticAssert(
+        valueOf(weightBankCount) > 0
+        && valueOf(weightBankCount) <= 2 ** 8,
+        "weight bank count exceeds local address width"
+    );
+    staticAssert(
+        valueOf(activationRowCount) > 0
+        && valueOf(activationRowCount) <= 2 ** 16,
+        "activation row count exceeds local address width"
+    );
+    staticAssert(
+        valueOf(weightRowCount) > 0
+        && valueOf(weightRowCount) <= 2 ** 16,
+        "weight row count exceeds local address width"
+    );
+    staticAssert(
+        valueOf(metaEntries) > 0
+        && valueOf(metaEntries) <= 2 ** 16,
+        "metadata entry count exceeds local address width"
     );
 
     function Bool rowShiftNeeded(ProviderLoadWork#(arrayDim) work);
@@ -383,17 +481,29 @@ module mkLoadController(LoadControllerIfc#(
 
     method Action schedule(ProviderLoadWork#(arrayDim) work)
         if (!isValid(active) && completions.notFull);
+        Bool valid = providerLoadWorkValid(
+            work,
+            valueOf(activationBankCount),
+            valueOf(activationRowCount),
+            valueOf(weightBankCount),
+            valueOf(weightRowCount),
+            valueOf(metaEntries)
+        );
         validateProviderLoadWork(
             work,
             valueOf(activationBankCount),
+            valueOf(activationRowCount),
             valueOf(weightBankCount),
+            valueOf(weightRowCount),
             valueOf(metaEntries)
         );
-        active <= tagged Valid work;
-        activationIssue <= 0;
-        weightIssue <= 0;
-        blockIssued <= !blockShiftNeeded(work);
-        rowIssued <= !rowShiftNeeded(work);
+        if (valid) begin
+            active <= tagged Valid work;
+            activationIssue <= 0;
+            weightIssue <= 0;
+            blockIssued <= !blockShiftNeeded(work);
+            rowIssued <= !rowShiftNeeded(work);
+        end
     endmethod
 
     interface ReadPortIfc activationPort;
@@ -503,9 +613,17 @@ module mkLoadController(LoadControllerIfc#(
         endinterface
     endinterface
 
+    method Bool dataResponseMaskValid(Vector#(arrayDim, Bool) mask);
+        return isValid(active)
+            && responseMaskMatches(
+                mask,
+                fromMaybe(?, active).fragmentKCount
+            );
+    endmethod
+
     method Bool metadataResponseMaskValid(Vector#(arrayDim, Bool) mask);
         return isValid(active)
-            && metadataMaskMatches(mask, fromMaybe(?, active).jCount);
+            && responseMaskMatches(mask, fromMaybe(?, active).jCount);
     endmethod
 
     method Bool completionValid = completions.notEmpty;

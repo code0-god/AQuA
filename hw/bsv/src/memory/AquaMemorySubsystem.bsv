@@ -105,7 +105,9 @@ module mkAquaMemorySubsystem(
     LoadControllerIfc#(
         arrayDim,
         activationBanks,
+        activationRows,
         weightBanks,
+        weightRows,
         metaEntries
     ) load <- mkLoadController;
     LoadStagerIfc#(

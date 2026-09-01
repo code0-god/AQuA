@@ -58,9 +58,21 @@ module mkWorkScheduler(WorkSchedulerIfc#(arrayDim));
 
     method Action start(ArrayWork#(arrayDim) work, Bool priorAccumulation)
         if (!isValid(activeWork) && !done);
-        MatrixExtent workEnd = work.kTileStart + work.kTileCount;
+        UInt#(33) workEndWide =
+            zeroExtend(work.kTileStart) + zeroExtend(work.kTileCount);
+        MatrixExtent workEnd = truncate(workEndWide);
+        Bool valid =
+            work.kTileCount > 0
+            && workEndWide <= fromInteger(2 ** 32 - 1)
+            && work.iCount > 0
+            && work.jCount > 0
+            && zeroExtend(work.iCount) <= arrayDimension
+            && zeroExtend(work.jCount) <= arrayDimension;
         dynamicAssert(work.kTileCount > 0, "macro K tile must be nonempty");
-        dynamicAssert(workEnd >= work.kTileStart, "macro K tile range overflow");
+        dynamicAssert(
+            workEndWide <= fromInteger(2 ** 32 - 1),
+            "macro K tile range overflow"
+        );
         dynamicAssert(work.iCount > 0, "array I count must be positive");
         dynamicAssert(work.jCount > 0, "array J count must be positive");
         dynamicAssert(
@@ -72,27 +84,29 @@ module mkWorkScheduler(WorkSchedulerIfc#(arrayDim));
             "array J count exceeds DIM"
         );
 
-        KFragment first = makeFragment(
-            arrayDimension,
-            work,
-            work.kTileStart,
-            priorAccumulation
-        );
-        MatrixExtent nextStart =
-            first.fragmentKStart + zeroExtend(first.fragmentKCount);
-        Maybe#(KFragment) next = tagged Invalid;
-        if (nextStart < workEnd) begin
-            next = tagged Valid makeFragment(
+        if (valid) begin
+            KFragment first = makeFragment(
                 arrayDimension,
                 work,
-                nextStart,
-                True
+                work.kTileStart,
+                priorAccumulation
             );
-        end
+            MatrixExtent nextStart =
+                first.fragmentKStart + zeroExtend(first.fragmentKCount);
+            Maybe#(KFragment) next = tagged Invalid;
+            if (nextStart < workEnd) begin
+                next = tagged Valid makeFragment(
+                    arrayDimension,
+                    work,
+                    nextStart,
+                    True
+                );
+            end
 
-        activeWork <= tagged Valid work;
-        current <= tagged Valid first;
-        lookahead <= next;
+            activeWork <= tagged Valid work;
+            current <= tagged Valid first;
+            lookahead <= next;
+        end
     endmethod
 
     method Bool fragmentValid = isValid(current);

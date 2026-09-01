@@ -89,12 +89,56 @@ interface StoreControllerIfc#(
     method Action consumeCompletion;
 endinterface
 
+function Bool storeWorkValid(
+    StoreWork#(arrayDim) work,
+    Integer bankCount,
+    Integer rowCount
+);
+    UInt#(32) iCount = zeroExtend(work.iCount);
+    UInt#(32) jCount = zeroExtend(work.jCount);
+    UInt#(33) logicalIEnd =
+        zeroExtend(work.iStart) + zeroExtend(iCount);
+    UInt#(33) logicalJEnd =
+        zeroExtend(work.jStart) + zeroExtend(jCount);
+    UInt#(32) baseRow =
+        zeroExtend(unpack(work.accumulatorBase.row));
+    UInt#(32) baseBank =
+        zeroExtend(unpack(work.accumulatorBase.bank));
+    UInt#(33) localRowEnd = zeroExtend(baseRow) + zeroExtend(iCount);
+    UInt#(33) localBankEnd = zeroExtend(baseBank) + zeroExtend(jCount);
+    UInt#(64) transactionCount =
+        zeroExtend(iCount) * zeroExtend(jCount);
+
+    return
+        work.iCount > 0
+        && work.jCount > 0
+        && work.iCount <= fromInteger(valueOf(arrayDim))
+        && work.jCount <= fromInteger(valueOf(arrayDim))
+        && logicalIEnd <= fromInteger(2 ** 32 - 1)
+        && logicalJEnd <= fromInteger(2 ** 32 - 1)
+        && work.accumulatorBase.region == LocalAccumulator
+        && localRowEnd <= fromInteger(rowCount)
+        && localBankEnd <= fromInteger(bankCount)
+        && transactionCount <= fromInteger(2 ** 32);
+endfunction
+
 module mkStoreController#(
     AccumulatorMemIfc#(bankCount, rowCount, accWidth) accumulator
 )(StoreControllerIfc#(arrayDim, bankCount, rowCount, accWidth))
     provisos (
         Add#(bankAddrPadding, TLog#(TAdd#(bankCount, 1)), 8),
         Add#(rowAddrPadding, TLog#(TAdd#(rowCount, 1)), 16)
+    );
+
+    staticAssert(
+        valueOf(bankCount) > 0
+        && valueOf(bankCount) <= 2 ** 8,
+        "accumulator bank count exceeds local address width"
+    );
+    staticAssert(
+        valueOf(rowCount) > 0
+        && valueOf(rowCount) <= 2 ** 16,
+        "accumulator row count exceeds local address width"
     );
 
     FIFOF#(AquaMemoryWriteRequest#(accWidth)) outputRequests
@@ -167,6 +211,11 @@ module mkStoreController#(
         UInt#(33) localBankEnd = zeroExtend(baseBank) + zeroExtend(jCount);
         UInt#(64) transactionCount =
             zeroExtend(iCount) * zeroExtend(jCount);
+        Bool valid = storeWorkValid(
+            work,
+            valueOf(bankCount),
+            valueOf(rowCount)
+        );
 
         dynamicAssert(work.iCount > 0, "store I count must be positive");
         dynamicAssert(work.jCount > 0, "store J count must be positive");
@@ -187,11 +236,13 @@ module mkStoreController#(
         dynamicAssert(transactionCount <= fromInteger(2 ** 32),
                       "store transaction count exceeds tag range");
 
-        active <= tagged Valid work;
-        localI <= 0;
-        localJ <= 0;
-        pendingAck <= tagged Invalid;
-        state <= StoreRead;
+        if (valid) begin
+            active <= tagged Valid work;
+            localI <= 0;
+            localJ <= 0;
+            pendingAck <= tagged Invalid;
+            state <= StoreRead;
+        end
     endmethod
 
     interface WritePortIfc outputPort;
