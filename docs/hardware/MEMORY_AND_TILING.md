@@ -125,6 +125,10 @@ accumulatorBanks / accumulatorRows
 metaEntries
 ```
 
+`AquaLocalAddr`의 고정 주소 폭 때문에 각 bank count는 최대 256, 각 row
+count와 `metaEntries`는 최대 65,536이다. controller elaboration은 이 범위를
+정적으로 검사한다.
+
 따라서 활성값과 가중치가 같은 뱅크 수나 깊이를 가져야 한다는 계약도,
 누산기 뱅크 수가 배열 차원과 같아야 한다는 계약도 없다. 각 컨트롤러는
 자신이 사용하는 메모리 기하에 대해서만 주소를 검증한다.
@@ -235,6 +239,8 @@ LoadStager
 `LoadController`는 요청을 발행하기 전에 activation/weight base와 work count가
 각 메모리의 실제 row depth를 넘지 않는지 검사한다. 따라서 로컬 메모리가
 받을 수 없는 요청이 pending 상태로 들어가 응답을 영구히 막지 않는다.
+검사는 assertion diagnostic과 독립적인 functional gate로 active state
+설치를 차단한다.
 
 각 채널은 동시에 하나의 요청만 outstanding일 수 있지만 서로 독립적으로
 진행한다. 요청이 `offered`인 동안에는 응답을 받지 않으며, 프로바이더가

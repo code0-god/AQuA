@@ -1,6 +1,6 @@
 # AQuA 현재 코드베이스 분석 가이드
 
-> 현재 브랜치: `refactor/bsv-foundation`
+> 기준 브랜치: `main`
 > 기준 baseline: `5870cc614cf42cc468e603d258ccebf8906853ae`
 > 목적: **다음 기능을 구현하기 전에, 현재까지 만들어진 타일링 / 로컬 메모리 / 스케줄러 / 프로바이더 스테이징 기반을 직접 읽고 이해하기 위한 코드 분석 순서**
 > 대상: AQuA 구현을 직접 검토하려는 개발자/연구자
@@ -346,7 +346,7 @@ AquaTileSelector
 
 GitHub:
 
-https://github.com/code0-god/AQuA/blob/refactor/bsv-foundation/README.md
+https://github.com/code0-god/AQuA/blob/main/README.md
 
 ---
 
@@ -379,7 +379,7 @@ https://github.com/code0-god/AQuA/blob/refactor/bsv-foundation/README.md
 
 GitHub:
 
-https://github.com/code0-god/AQuA/blob/refactor/bsv-foundation/docs/hardware/MEMORY_AND_TILING.md
+https://github.com/code0-god/AQuA/blob/main/docs/hardware/MEMORY_AND_TILING.md
 
 ---
 
@@ -428,7 +428,7 @@ external memory / physical DMA:
 
 GitHub:
 
-https://github.com/code0-god/AQuA/blob/refactor/bsv-foundation/docs/hardware/GEMMINI_IM2P_MIGRATION.md
+https://github.com/code0-god/AQuA/blob/main/docs/hardware/GEMMINI_IM2P_MIGRATION.md
 
 ---
 
@@ -519,7 +519,7 @@ accumulator_banks가 array_dim을 나눌 수 있음
 
 GitHub:
 
-https://github.com/code0-god/AQuA/blob/refactor/bsv-foundation/crates/aqua-runtime/src/hardware.rs
+https://github.com/code0-god/AQuA/blob/main/crates/aqua-runtime/src/hardware.rs
 
 ---
 
@@ -690,7 +690,7 @@ ExSIA 표준 스트라이프는 전체 논리 K를 폴딩한다.
 
 GitHub:
 
-https://github.com/code0-god/AQuA/blob/refactor/bsv-foundation/crates/aqua-runtime/src/tiling/capacity.rs
+https://github.com/code0-god/AQuA/blob/main/crates/aqua-runtime/src/tiling/capacity.rs
 
 ---
 
@@ -813,7 +813,7 @@ J
 
 GitHub:
 
-https://github.com/code0-god/AQuA/blob/refactor/bsv-foundation/crates/aqua-runtime/src/tiling/selector.rs
+https://github.com/code0-god/AQuA/blob/main/crates/aqua-runtime/src/tiling/selector.rs
 
 ---
 
@@ -877,7 +877,7 @@ canonical ExSIA
 
 GitHub:
 
-https://github.com/code0-god/AQuA/blob/refactor/bsv-foundation/crates/aqua-runtime/src/tiling.rs
+https://github.com/code0-god/AQuA/blob/main/crates/aqua-runtime/src/tiling.rs
 
 ---
 
@@ -1036,6 +1036,9 @@ fragment_count = min(array_dim, remaining_k, remaining_in_32_wide_block)
 
 fragment는 HP1 block 경계를 넘지 않는다. block 경계는 accumulator reset
 경계가 아니다. 현재 fragment 하나와 lookahead 하나를 유지한다.
+K range overflow는 diagnostic assertion과 별도로 state 설치 조건에서
+검사한다. assertions-disabled RTL safety test는 overflow work가 scheduler
+state에 들어가지 않는지 확인한다.
 
 Rust는 매크로 K 후보와 용량을 계산하지만 BSV 매크로 K traversal은 아직
 없다. 향후 `AquaLoopMatmul`이 실제 K 범위를 만들고 `ArrayWork`에 전달할
@@ -1078,6 +1081,8 @@ queued-response API는 없다. output은 typed write request와 ack를 사용한
 schedule 시 activation/weight base에서 마지막 work row까지 계산하고 실제
 `activationRows`/`weightRows` 안에 있는지 확인한다. 인코딩 폭만 맞고 물리
 depth를 넘는 work는 request를 발행하기 전에 거부한다.
+전체 work validity는 assertion과 독립적인 functional gate로 active state
+설치를 제어한다.
 
 ```text
 request offered
@@ -1155,8 +1160,10 @@ accumulatorBanks / accumulatorRows / accumulatorWidth
 read response는 소비될 때까지 유지되며 write가 같은 port의 accepted read보다
 우선한다.
 
-`AccumulatorMem`은 overwrite와 checked accumulate를 구분하고 overflow를
-assert한다. accumulator bank count도 DIM이나 scratchpad bank count에 묶이지 않는다.
+`AccumulatorMem`은 overwrite와 checked accumulate를 구분한다. overflow는
+assertion으로 진단하는 동시에 functional gate가 pending write와 completion을
+막아 저장값을 보존한다. accumulator bank count도 DIM이나 scratchpad bank
+count에 묶이지 않는다.
 
 ---
 
@@ -1233,6 +1240,15 @@ mkTbWeightResponseMaskMismatch
 mkTbMetadataResponseMaskMismatch
 ```
 
+assertions-disabled RTL safety top 4개:
+
+```text
+mkTbLoadInvalidWorkGate
+mkTbStoreInvalidWorkGate
+mkTbAccumulatorOverflowGate
+mkTbWorkRangeOverflowGate
+```
+
 synthesis top 3개:
 
 ```text
@@ -1245,6 +1261,7 @@ mkMemorySubsystemSynthTop
 make -C hw/bsv bsv-test-one TOP=mkTbMatmulScheduler
 make -C hw/bsv bsv-test-one TOP=mkTbLoadController
 make -C hw/bsv bsv-test-one TOP=mkTbAquaMemorySubsystem
+make -C hw/bsv bsv-test-no-assert
 make -C hw/bsv verify
 ```
 
