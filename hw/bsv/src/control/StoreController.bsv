@@ -3,12 +3,67 @@ package StoreController;
 import Assert::*;
 import AccumulatorMem::*;
 import AquaLocalAddr::*;
-import AquaMemoryTypes::*;
+import AquaMemoryProtocol::*;
 import AquaTypes::*;
 import AquaWorkTypes::*;
 import FIFOF::*;
 import SpecialFIFOs::*;
-import StoreRequestBuilder::*;
+
+function AquaLocalAddr accumulatorAddress(
+    StoreWork#(arrayDim) work,
+    MatrixExtent localI,
+    MatrixExtent localJ
+);
+    UInt#(32) baseBank = zeroExtend(unpack(work.accumulatorBase.bank));
+    UInt#(32) baseRow = zeroExtend(unpack(work.accumulatorBase.row));
+    return AquaLocalAddr {
+        region: LocalAccumulator,
+        bank: truncate(pack(baseBank + localJ)),
+        row: truncate(pack(baseRow + localI))
+    };
+endfunction
+
+function AquaMemoryTag storeTag(
+    StoreWork#(arrayDim) work,
+    MatrixExtent transaction,
+    AquaLocalAddr source
+);
+    return AquaMemoryTag {
+        jobId: work.jobId,
+        stripeId: work.stripeId,
+        arrayWorkId: work.arrayWorkId,
+        fragmentId: 0,
+        transactionId: memoryTransactionId(transaction),
+        localAddress: source
+    };
+endfunction
+
+function AquaMemoryWriteRequest#(accWidth) outputWriteRequest(
+    StoreWork#(arrayDim) work,
+    MatrixExtent localI,
+    MatrixExtent localJ,
+    Int#(accWidth) rawValue
+);
+    MatrixExtent jCount = zeroExtend(work.jCount);
+    UInt#(64) transactionWide =
+        zeroExtend(localI) * zeroExtend(jCount)
+        + zeroExtend(localJ);
+    MatrixExtent transaction = truncate(transactionWide);
+    let source = accumulatorAddress(work, localI, localJ);
+    return AquaMemoryWriteRequest {
+        tag: storeTag(work, transaction, source),
+        tensorId: work.outputTensor,
+        outputRow: LogicalRange {
+            start: work.iStart + localI,
+            count: 1
+        },
+        outputColumn: LogicalRange {
+            start: work.jStart + localJ,
+            count: 1
+        },
+        rawValue: rawValue
+    };
+endfunction
 
 typedef enum {
     StoreIdle,
@@ -27,11 +82,7 @@ interface StoreControllerIfc#(
     method Bool startReady;
     method Action start(StoreWork#(arrayDim) work);
 
-    method Bool outputRequestValid;
-    method AquaMemoryWriteRequest#(accWidth) outputRequest;
-    method Action consumeOutputRequest;
-    method Bool outputAckReady(AquaMemoryWriteAck acknowledgement);
-    method Action putOutputAck(AquaMemoryWriteAck acknowledgement);
+    interface WritePortIfc#(accWidth) outputPort;
 
     method Bool completionValid;
     method StoreCompletion completion;
@@ -42,7 +93,6 @@ module mkStoreController#(
     AccumulatorMemIfc#(bankCount, rowCount, accWidth) accumulator
 )(StoreControllerIfc#(arrayDim, bankCount, rowCount, accWidth))
     provisos (
-        Add#(arrayPadding, TLog#(TAdd#(arrayDim, 1)), 32),
         Add#(bankAddrPadding, TLog#(TAdd#(bankCount, 1)), 8),
         Add#(rowAddrPadding, TLog#(TAdd#(rowCount, 1)), 16)
     );
@@ -52,8 +102,8 @@ module mkStoreController#(
     FIFOF#(StoreCompletion) completions <- mkPipelineFIFOF;
     Reg#(StoreState) state <- mkReg(StoreIdle);
     Reg#(Maybe#(StoreWork#(arrayDim))) active <- mkReg(tagged Invalid);
-    Reg#(ArrayExtent#(arrayDim)) localI <- mkReg(0);
-    Reg#(ArrayExtent#(arrayDim)) localJ <- mkReg(0);
+    Reg#(ArrayCount) localI <- mkReg(0);
+    Reg#(ArrayCount) localJ <- mkReg(0);
     Reg#(Maybe#(AquaMemoryTag)) pendingAck <- mkReg(tagged Invalid);
 
     rule issueAccumulatorRead (
@@ -83,9 +133,9 @@ module mkStoreController#(
         MatrixExtent i = zeroExtend(localI);
         MatrixExtent j = zeroExtend(localJ);
         let request = outputWriteRequest(work, i, j, response.value);
-        dynamicAssert(response.bank == truncate(request.tag.localDestination.bank),
+        dynamicAssert(response.bank == truncate(request.tag.localAddress.bank),
                       "accumulator response bank mismatch");
-        dynamicAssert(response.row == truncate(request.tag.localDestination.row),
+        dynamicAssert(response.row == truncate(request.tag.localAddress.row),
                       "accumulator response row mismatch");
         outputRequests.enq(request);
         accumulator.consumeRead;
@@ -144,72 +194,78 @@ module mkStoreController#(
         state <= StoreRead;
     endmethod
 
-    method Bool outputRequestValid = outputRequests.notEmpty;
+    interface WritePortIfc outputPort;
+        interface WriteRequestSourceIfc requests;
+            method Bool valid = outputRequests.notEmpty;
+            method AquaMemoryWriteRequest#(accWidth) first
+                if (outputRequests.notEmpty);
+                return outputRequests.first;
+            endmethod
+            method Action consume
+                if (
+                    outputRequests.notEmpty
+                    && state == StoreOfferWrite
+                    && isValid(active)
+                );
+                pendingAck <= tagged Valid outputRequests.first.tag;
+                outputRequests.deq;
+                state <= StoreWaitAck;
+            endmethod
+        endinterface
 
-    method AquaMemoryWriteRequest#(accWidth) outputRequest
-        if (outputRequests.notEmpty);
-        return outputRequests.first;
-    endmethod
+        interface WriteResponseSinkIfc responses;
+            method Bool ready(AquaMemoryWriteAck acknowledgement);
+                return
+                    state == StoreWaitAck
+                    && isValid(active)
+                    && isValid(pendingAck)
+                    && completions.notFull
+                    && acknowledgement.accepted
+                    && acknowledgement.tag == fromMaybe(?, pendingAck);
+            endmethod
 
-    method Action consumeOutputRequest
-        if (
-            outputRequests.notEmpty
-            && state == StoreOfferWrite
-            && isValid(active)
-        );
-        pendingAck <= tagged Valid outputRequests.first.tag;
-        outputRequests.deq;
-        state <= StoreWaitAck;
-    endmethod
-
-    method Bool outputAckReady(AquaMemoryWriteAck acknowledgement);
-        return
-            state == StoreWaitAck
-            && isValid(active)
-            && isValid(pendingAck)
-            && completions.notFull
-            && acknowledgement.accepted
-            && acknowledgement.tag == fromMaybe(?, pendingAck);
-    endmethod
-
-    method Action putOutputAck(AquaMemoryWriteAck acknowledgement)
-        if (
-            state == StoreWaitAck
-            && isValid(active)
-            && isValid(pendingAck)
-            && completions.notFull
-        );
-        let work = fromMaybe(?, active);
-        Bool valid =
-            acknowledgement.accepted
-            && acknowledgement.tag == fromMaybe(?, pendingAck);
-        dynamicAssert(valid, "output acknowledgement mismatch or rejection");
-        if (valid) begin
-            pendingAck <= tagged Invalid;
-            if (
-                localJ + 1 == work.jCount
-                && localI + 1 == work.iCount
-            ) begin
-                completions.enq(StoreCompletion {
-                    jobId: work.jobId,
-                    stripeId: work.stripeId,
-                    macroTileId: work.macroTileId,
-                    arrayWorkId: work.arrayWorkId
-                });
-                active <= tagged Invalid;
-                state <= StoreIdle;
-            end
-            else if (localJ + 1 == work.jCount) begin
-                localJ <= 0;
-                localI <= localI + 1;
-                state <= StoreRead;
-            end
-            else begin
-                localJ <= localJ + 1;
-                state <= StoreRead;
-            end
-        end
-    endmethod
+            method Action put(AquaMemoryWriteAck acknowledgement)
+                if (
+                    state == StoreWaitAck
+                    && isValid(active)
+                    && isValid(pendingAck)
+                    && completions.notFull
+                );
+                let work = fromMaybe(?, active);
+                Bool valid =
+                    acknowledgement.accepted
+                    && acknowledgement.tag == fromMaybe(?, pendingAck);
+                dynamicAssert(
+                    valid,
+                    "output acknowledgement mismatch or rejection"
+                );
+                if (valid) begin
+                    pendingAck <= tagged Invalid;
+                    if (
+                        localJ + 1 == work.jCount
+                        && localI + 1 == work.iCount
+                    ) begin
+                        completions.enq(StoreCompletion {
+                            jobId: work.jobId,
+                            stripeId: work.stripeId,
+                            arrayWorkId: work.arrayWorkId
+                        });
+                        active <= tagged Invalid;
+                        state <= StoreIdle;
+                    end
+                    else if (localJ + 1 == work.jCount) begin
+                        localJ <= 0;
+                        localI <= localI + 1;
+                        state <= StoreRead;
+                    end
+                    else begin
+                        localJ <= localJ + 1;
+                        state <= StoreRead;
+                    end
+                end
+            endmethod
+        endinterface
+    endinterface
 
     method Bool completionValid = completions.notEmpty;
     method StoreCompletion completion if (completions.notEmpty);

@@ -9,38 +9,19 @@ BSC_COMMON := -p $(BSC_PATH) $(BSC_DIRS) -check-assert \
               -keep-fires -show-schedule
 
 BSV_SOURCE_FILES := \
-	src/common/AquaConfig.bsv \
 	src/common/AquaTypes.bsv \
-	src/common/AquaMath.bsv \
 	src/memory/AquaLocalAddr.bsv \
-	src/control/AquaWorkTypes.bsv \
-	src/memory/AquaMemoryTypes.bsv \
-	src/memory/AquaMemoryAddressing.bsv \
-	src/memory/AquaMemoryResponseValidation.bsv \
-	src/memory/ScratchpadBank.bsv \
-	src/memory/ActivationSpad.bsv \
-	src/memory/WeightSpad.bsv \
+	src/common/AquaWorkTypes.bsv \
+	src/common/AquaMemoryProtocol.bsv \
+	src/memory/Scratchpad.bsv \
 	src/memory/Hp1MetaMem.bsv \
 	src/memory/AccumulatorMem.bsv \
-	src/control/LoadControllerTypes.bsv \
-	src/control/LoadChannel.bsv \
-	src/control/LoadRequestBuilder.bsv \
-	src/control/LoadWorkValidation.bsv \
-	src/control/LoadMetadataRouter.bsv \
-	src/control/LoadResponseRouterTypes.bsv \
-	src/control/LoadResponseRouter.bsv \
 	src/control/LoadController.bsv \
-	src/control/StoreRequestBuilder.bsv \
 	src/control/StoreController.bsv \
-	src/memory/AquaMemorySubsystemTypes.bsv \
-	src/memory/ScratchpadResponseStagerTypes.bsv \
-	src/memory/ScratchpadResponseStager.bsv \
-	src/memory/MetadataResponseStager.bsv \
+	src/memory/LoadStager.bsv \
 	src/memory/AquaMemorySubsystem.bsv \
-	src/control/MatmulScheduleMath.bsv \
 	src/control/WorkScheduler.bsv \
-	src/control/MatmulScheduler.bsv \
-	src/ExSIAQuantizer.bsv
+	src/control/MatmulScheduler.bsv
 
 BSV_TEST_TOPS := \
 	mkTbHardwareContracts \
@@ -59,7 +40,8 @@ BSV_EXPECT_FAIL_TOPS := \
 	mkTbAccumulatorOverflow \
 	mkTbMatmulStripeGap \
 	mkTbMatmulStripeOverlap \
-	mkTbMatmulStripeOutOfBounds
+	mkTbMatmulStripeOutOfBounds \
+	mkTbMetadataResponseMaskMismatch
 
 SYNTH_TOPS := \
 	mkMemorySynthTop \
@@ -103,6 +85,7 @@ bsv-test: | $(BUILD_DIR)/bsc $(BUILD_DIR)/sim $(BUILD_DIR)/info $(BUILD_DIR)/bin
 	    mkTbMatmulStripeGap) expected='stripe publication gap' ;; \
 	    mkTbMatmulStripeOverlap) expected='stripe publication overlap' ;; \
 	    mkTbMatmulStripeOutOfBounds) expected='stripe publication out of bounds' ;; \
+	    mkTbMetadataResponseMaskMismatch) expected='metadata response mask does not match requested J count' ;; \
 	    *) echo "missing expected failure text for $$top" >&2; exit 2 ;; \
 	  esac; \
 	  output="$$("$(BUILD_DIR)/bin/$$package" 2>&1)"; \

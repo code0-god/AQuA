@@ -1,171 +1,160 @@
 package AquaMemorySubsystem;
 
 import AccumulatorMem::*;
-import AquaMemorySubsystemTypes::*;
-import AquaMemoryTypes::*;
+import AquaMemoryProtocol::*;
 import AquaTypes::*;
 import AquaWorkTypes::*;
+import Hp1MetaMem::*;
 import LoadController::*;
-import LoadControllerTypes::*;
-import MetadataResponseStager::*;
-import ScratchpadResponseStager::*;
-import ScratchpadResponseStagerTypes::*;
+import LoadStager::*;
+import Scratchpad::*;
 import StoreController::*;
+import Vector::*;
+
+interface AquaMemorySubsystemIfc#(
+    numeric type arrayDim,
+    numeric type activationBanks,
+    numeric type activationRows,
+    numeric type weightBanks,
+    numeric type weightRows,
+    numeric type metaEntries,
+    numeric type activationWidth,
+    numeric type weightWidth,
+    numeric type shiftWidth,
+    numeric type accumulatorBanks,
+    numeric type accumulatorRows,
+    numeric type accumulatorWidth
+);
+    method Bool loadReady;
+    method Action scheduleLoad(ProviderLoadWork#(arrayDim) work);
+
+    interface ReadPortIfc#(
+        ActivationMemoryResponse#(arrayDim, activationWidth)
+    ) activationPort;
+    interface ReadPortIfc#(
+        WeightMemoryResponse#(arrayDim, weightWidth)
+    ) weightPort;
+    interface ReadPortIfc#(
+        BlockShiftMemoryResponse#(arrayDim, shiftWidth)
+    ) blockShiftPort;
+    interface ReadPortIfc#(
+        RowScaleMemoryResponse#(arrayDim, shiftWidth)
+    ) rowShiftPort;
+
+    method Bool loadCompletionValid;
+    method LoadCompletion loadCompletion;
+    method Action consumeLoadCompletion;
+
+    method Bool storeReady;
+    method Action scheduleStore(StoreWork#(arrayDim) work);
+    interface WritePortIfc#(accumulatorWidth) outputPort;
+    method Bool storeCompletionValid;
+    method StoreCompletion storeCompletion;
+    method Action consumeStoreCompletion;
+
+    interface Vector#(
+        activationBanks,
+        ScratchpadBankIfc#(
+            activationRows,
+            arrayDim,
+            Int#(activationWidth)
+        )
+    ) activationBanks;
+    interface Vector#(
+        weightBanks,
+        ScratchpadBankIfc#(
+            weightRows,
+            arrayDim,
+            Bit#(weightWidth)
+        )
+    ) weightBanks;
+    interface Hp1MetaMemIfc#(metaEntries, arrayDim, shiftWidth) hp1Meta;
+    interface AccumulatorMemIfc#(
+        accumulatorBanks,
+        accumulatorRows,
+        accumulatorWidth
+    ) accumulator;
+endinterface
 
 module mkAquaMemorySubsystem(
     AquaMemorySubsystemIfc#(
         arrayDim,
-        spadBanks,
-        spadRows,
+        activationBanks,
+        activationRows,
+        weightBanks,
+        weightRows,
         metaEntries,
         activationWidth,
         weightWidth,
         shiftWidth,
-        accRows,
-        accWidth
+        accumulatorBanks,
+        accumulatorRows,
+        accumulatorWidth
     )
 ) provisos (
-    Add#(arrayPadding, TLog#(TAdd#(arrayDim, 1)), 32),
-    Add#(lanePadding, TLog#(arrayDim), 32),
-    Add#(laneTagPadding, TLog#(arrayDim), 40),
-    Add#(accBankPadding, TLog#(TAdd#(arrayDim, 1)), 8),
-    Add#(accRowPadding, TLog#(TAdd#(accRows, 1)), 16),
-    Add#(spadBankPadding, TLog#(spadBanks), 32),
-    Add#(spadRowPadding, TLog#(TAdd#(spadRows, 1)), 32),
+    Add#(activationLanePadding, TLog#(arrayDim), 32),
+    Add#(weightLanePadding, TLog#(arrayDim), 32),
+    Add#(accBankPadding, TLog#(TAdd#(accumulatorBanks, 1)), 8),
+    Add#(accRowPadding, TLog#(TAdd#(accumulatorRows, 1)), 16),
+    Add#(activationBankPadding, TLog#(activationBanks), 32),
+    Add#(activationRowPadding, TLog#(TAdd#(activationRows, 1)), 32),
+    Add#(weightBankPadding, TLog#(weightBanks), 32),
+    Add#(weightRowPadding, TLog#(TAdd#(weightRows, 1)), 32),
     Add#(metaPadding, TLog#(TAdd#(metaEntries, 1)), 32)
 );
-    LoadControllerIfc#(arrayDim, spadBanks, metaEntries) load
-        <- mkLoadController;
-    ScratchpadResponseStagerIfc#(
+    LoadControllerIfc#(
         arrayDim,
-        spadBanks,
-        spadRows,
+        activationBanks,
+        weightBanks,
+        metaEntries
+    ) load <- mkLoadController;
+    LoadStagerIfc#(
+        arrayDim,
+        activationBanks,
+        activationRows,
+        weightBanks,
+        weightRows,
+        metaEntries,
         activationWidth,
-        weightWidth
-    ) scratchpads <- mkScratchpadResponseStager(load);
-    MetadataResponseStagerIfc#(metaEntries, shiftWidth) metadata
-        <- mkMetadataResponseStager(load);
-    AccumulatorMemIfc#(arrayDim, accRows, accWidth) accumulators
-        <- mkAccumulatorMem;
-    StoreControllerIfc#(arrayDim, arrayDim, accRows, accWidth) store
-        <- mkStoreController(accumulators);
+        weightWidth,
+        shiftWidth
+    ) staging <- mkLoadStager(load);
+    AccumulatorMemIfc#(
+        accumulatorBanks,
+        accumulatorRows,
+        accumulatorWidth
+    ) accumulators <- mkAccumulatorMem;
+    StoreControllerIfc#(
+        arrayDim,
+        accumulatorBanks,
+        accumulatorRows,
+        accumulatorWidth
+    ) store <- mkStoreController(accumulators);
 
     method Bool loadReady = load.scheduleReady;
     method Action scheduleLoad(ProviderLoadWork#(arrayDim) work);
         load.schedule(work);
     endmethod
 
-    method Bool activationRequestValid =
-        load.activationRequests.requestValid;
-    method AquaMemoryReadRequest activationRequest
-        if (load.activationRequests.requestValid);
-        return load.activationRequests.request;
-    endmethod
-    method Action consumeActivationRequest
-        if (load.activationRequests.requestValid);
-        load.activationRequests.consumeRequest;
-    endmethod
-    method Bool weightRequestValid = load.weightRequests.requestValid;
-    method AquaMemoryReadRequest weightRequest
-        if (load.weightRequests.requestValid);
-        return load.weightRequests.request;
-    endmethod
-    method Action consumeWeightRequest if (load.weightRequests.requestValid);
-        load.weightRequests.consumeRequest;
-    endmethod
-    method Bool blockShiftRequestValid =
-        load.blockShiftRequests.requestValid;
-    method AquaMemoryReadRequest blockShiftRequest
-        if (load.blockShiftRequests.requestValid);
-        return load.blockShiftRequests.request;
-    endmethod
-    method Action consumeBlockShiftRequest
-        if (load.blockShiftRequests.requestValid);
-        load.blockShiftRequests.consumeRequest;
-    endmethod
-    method Bool rowScaleRequestValid =
-        load.rowScaleRequests.requestValid;
-    method AquaMemoryReadRequest rowScaleRequest
-        if (load.rowScaleRequests.requestValid);
-        return load.rowScaleRequests.request;
-    endmethod
-    method Action consumeRowScaleRequest
-        if (load.rowScaleRequests.requestValid);
-        load.rowScaleRequests.consumeRequest;
-    endmethod
+    interface ReadPortIfc activationPort;
+        interface requests = load.activationPort.requests;
+        interface responses = staging.activationResponses;
+    endinterface
 
-    method Bool activationResponseReady(
-        ActivationMemoryResponse#(arrayDim, activationWidth) response
-    ) =
-        scratchpads.activationResponseReady(response);
-    method Action putActivationResponse(
-        ActivationMemoryResponse#(arrayDim, activationWidth) response
-    );
-        scratchpads.putActivationResponse(response);
-    endmethod
-    method Bool queuedActivationResponseReady(
-        ActivationMemoryResponse#(arrayDim, activationWidth) response
-    ) =
-        scratchpads.queuedActivationResponseReady(response);
-    method Action putQueuedActivationResponse(
-        ActivationMemoryResponse#(arrayDim, activationWidth) response
-    );
-        scratchpads.putQueuedActivationResponse(response);
-    endmethod
-    method Bool weightResponseReady(
-        WeightMemoryResponse#(arrayDim, weightWidth) response
-    ) =
-        scratchpads.weightResponseReady(response);
-    method Action putWeightResponse(
-        WeightMemoryResponse#(arrayDim, weightWidth) response
-    );
-        scratchpads.putWeightResponse(response);
-    endmethod
-    method Bool queuedWeightResponseReady(
-        WeightMemoryResponse#(arrayDim, weightWidth) response
-    ) =
-        scratchpads.queuedWeightResponseReady(response);
-    method Action putQueuedWeightResponse(
-        WeightMemoryResponse#(arrayDim, weightWidth) response
-    );
-        scratchpads.putQueuedWeightResponse(response);
-    endmethod
-    method Bool blockShiftResponseReady(
-        BlockShiftMemoryResponse#(shiftWidth) response
-    ) =
-        metadata.blockShiftResponseReady(response);
-    method Action putBlockShiftResponse(
-        BlockShiftMemoryResponse#(shiftWidth) response
-    );
-        metadata.putBlockShiftResponse(response);
-    endmethod
-    method Bool queuedBlockShiftResponseReady(
-        BlockShiftMemoryResponse#(shiftWidth) response
-    ) =
-        metadata.queuedBlockShiftResponseReady(response);
-    method Action putQueuedBlockShiftResponse(
-        BlockShiftMemoryResponse#(shiftWidth) response
-    );
-        metadata.putQueuedBlockShiftResponse(response);
-    endmethod
-    method Bool rowScaleResponseReady(
-        RowScaleMemoryResponse#(shiftWidth) response
-    ) =
-        metadata.rowScaleResponseReady(response);
-    method Action putRowScaleResponse(
-        RowScaleMemoryResponse#(shiftWidth) response
-    );
-        metadata.putRowScaleResponse(response);
-    endmethod
-    method Bool queuedRowScaleResponseReady(
-        RowScaleMemoryResponse#(shiftWidth) response
-    ) =
-        metadata.queuedRowScaleResponseReady(response);
-    method Action putQueuedRowScaleResponse(
-        RowScaleMemoryResponse#(shiftWidth) response
-    );
-        metadata.putQueuedRowScaleResponse(response);
-    endmethod
+    interface ReadPortIfc weightPort;
+        interface requests = load.weightPort.requests;
+        interface responses = staging.weightResponses;
+    endinterface
+
+    interface ReadPortIfc blockShiftPort;
+        interface requests = load.blockShiftPort.requests;
+        interface responses = staging.blockShiftResponses;
+    endinterface
+
+    interface ReadPortIfc rowShiftPort;
+        interface requests = load.rowShiftPort.requests;
+        interface responses = staging.rowShiftResponses;
+    endinterface
 
     method Bool loadCompletionValid = load.completionValid;
     method LoadCompletion loadCompletion if (load.completionValid);
@@ -179,20 +168,7 @@ module mkAquaMemorySubsystem(
     method Action scheduleStore(StoreWork#(arrayDim) work);
         store.start(work);
     endmethod
-    method Bool outputRequestValid = store.outputRequestValid;
-    method AquaMemoryWriteRequest#(accWidth) outputRequest
-        if (store.outputRequestValid);
-        return store.outputRequest;
-    endmethod
-    method Action consumeOutputRequest if (store.outputRequestValid);
-        store.consumeOutputRequest;
-    endmethod
-    method Bool outputAckReady(AquaMemoryWriteAck acknowledgement);
-        return store.outputAckReady(acknowledgement);
-    endmethod
-    method Action putOutputAck(AquaMemoryWriteAck acknowledgement);
-        store.putOutputAck(acknowledgement);
-    endmethod
+    interface outputPort = store.outputPort;
     method Bool storeCompletionValid = store.completionValid;
     method StoreCompletion storeCompletion if (store.completionValid);
         return store.completion;
@@ -201,9 +177,9 @@ module mkAquaMemorySubsystem(
         store.consumeCompletion;
     endmethod
 
-    interface activationBanks = scratchpads.activationBanks;
-    interface weightBanks = scratchpads.weightBanks;
-    interface hp1Meta = metadata.hp1Meta;
+    interface activationBanks = staging.activationBanks;
+    interface weightBanks = staging.weightBanks;
+    interface hp1Meta = staging.hp1Meta;
     interface accumulator = accumulators;
 endmodule
 

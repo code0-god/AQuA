@@ -1,7 +1,7 @@
 package MemorySynthTop;
 
 import AccumulatorMem::*;
-import ScratchpadBank::*;
+import Scratchpad::*;
 import Vector::*;
 
 (* synthesize *)

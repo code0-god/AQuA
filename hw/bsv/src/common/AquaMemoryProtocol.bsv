@@ -1,16 +1,9 @@
-package AquaMemoryTypes;
+package AquaMemoryProtocol;
 
+import AquaLocalAddr::*;
 import AquaTypes::*;
 import AquaWorkTypes::*;
 import Vector::*;
-
-typedef enum {
-    MemoryActivation,
-    MemoryWeightCode,
-    MemoryHp1BlockShift,
-    MemoryHp1RowScale,
-    MemoryRawOutput
-} AquaMemoryKind deriving (Bits, Eq, FShow);
 
 typedef struct {
     MatrixExtent start;
@@ -20,12 +13,10 @@ typedef struct {
 typedef struct {
     MatmulJobId jobId;
     StripeId stripeId;
-    MacroTileId macroTileId;
     ArrayWorkId arrayWorkId;
     KFragmentId fragmentId;
-    AquaMemoryKind kind;
     AquaMemoryTxnId transactionId;
-    DefaultAquaLocalAddr localDestination;
+    AquaLocalAddr localAddress;
 } AquaMemoryTag deriving (Bits, Eq, FShow);
 
 typedef struct {
@@ -34,6 +25,22 @@ typedef struct {
     LogicalRange outer;
     LogicalRange inner;
 } AquaMemoryReadRequest deriving (Bits, Eq, FShow);
+
+interface ReadRequestSourceIfc;
+    method Bool valid;
+    method AquaMemoryReadRequest first;
+    method Action consume;
+endinterface
+
+interface ReadResponseSinkIfc#(type response_t);
+    method Bool ready(response_t response);
+    method Action put(response_t response);
+endinterface
+
+interface ReadPortIfc#(type response_t);
+    interface ReadRequestSourceIfc requests;
+    interface ReadResponseSinkIfc#(response_t) responses;
+endinterface
 
 typedef struct {
     AquaMemoryTag tag;
@@ -63,40 +70,60 @@ typedef AquaMemoryReadResponse#(
     numeric type elementWidth
 );
 
-typedef AquaMemoryReadResponse#(
+typedef ScratchpadRowPayload#(
+    arrayDim,
     Hp1BlockScale#(shiftWidth)
-) BlockShiftMemoryResponse#(numeric type shiftWidth);
+) Hp1BlockScaleRow#(
+    numeric type arrayDim,
+    numeric type shiftWidth
+);
+
+typedef ScratchpadRowPayload#(
+    arrayDim,
+    UInt#(shiftWidth)
+) Hp1RowShiftRow#(
+    numeric type arrayDim,
+    numeric type shiftWidth
+);
 
 typedef AquaMemoryReadResponse#(
-    UInt#(shiftWidth)
-) RowScaleMemoryResponse#(numeric type shiftWidth);
+    Hp1BlockScaleRow#(arrayDim, shiftWidth)
+) BlockShiftMemoryResponse#(
+    numeric type arrayDim,
+    numeric type shiftWidth
+);
+
+typedef AquaMemoryReadResponse#(
+    Hp1RowShiftRow#(arrayDim, shiftWidth)
+) RowScaleMemoryResponse#(
+    numeric type arrayDim,
+    numeric type shiftWidth
+);
 
 typedef struct {
     MatmulJobId jobId;
     StripeId stripeId;
-    MacroTileId macroTileId;
     ArrayWorkId arrayWorkId;
     KFragmentId fragmentId;
     HostTensorId activationTensor;
     HostTensorId weightTensor;
     MatrixExtent iStart;
-    ArrayExtent#(arrayDim) iCount;
+    ArrayCount iCount;
     MatrixExtent jStart;
-    ArrayExtent#(arrayDim) jCount;
+    ArrayCount jCount;
     MatrixExtent fragmentKStart;
-    MatrixExtent fragmentKCount;
+    ArrayCount fragmentKCount;
     MatrixExtent fragmentBlockIndex;
-    DefaultAquaLocalAddr activationBase;
-    DefaultAquaLocalAddr weightBase;
-    DefaultAquaLocalAddr blockShiftDestination;
-    DefaultAquaLocalAddr rowScaleDestination;
+    AquaLocalAddr activationBase;
+    AquaLocalAddr weightBase;
+    AquaLocalAddr blockShiftDestination;
+    AquaLocalAddr rowScaleDestination;
 } ProviderLoadWork#(numeric type arrayDim)
     deriving (Bits, Eq, FShow);
 
 typedef struct {
     MatmulJobId jobId;
     StripeId stripeId;
-    MacroTileId macroTileId;
     ArrayWorkId arrayWorkId;
     KFragmentId fragmentId;
 } LoadCompletion deriving (Bits, Eq, FShow);
@@ -104,14 +131,13 @@ typedef struct {
 typedef struct {
     MatmulJobId jobId;
     StripeId stripeId;
-    MacroTileId macroTileId;
     ArrayWorkId arrayWorkId;
     HostTensorId outputTensor;
     MatrixExtent iStart;
-    ArrayExtent#(arrayDim) iCount;
+    ArrayCount iCount;
     MatrixExtent jStart;
-    ArrayExtent#(arrayDim) jCount;
-    DefaultAquaLocalAddr accumulatorBase;
+    ArrayCount jCount;
+    AquaLocalAddr accumulatorBase;
 } StoreWork#(numeric type arrayDim)
     deriving (Bits, Eq, FShow);
 
@@ -129,10 +155,29 @@ typedef struct {
     Bool accepted;
 } AquaMemoryWriteAck deriving (Bits, Eq, FShow);
 
+interface WriteRequestSourceIfc#(numeric type accWidth);
+    method Bool valid;
+    method AquaMemoryWriteRequest#(accWidth) first;
+    method Action consume;
+endinterface
+
+interface WriteResponseSinkIfc;
+    method Bool ready(AquaMemoryWriteAck acknowledgement);
+    method Action put(AquaMemoryWriteAck acknowledgement);
+endinterface
+
+interface WritePortIfc#(numeric type accWidth);
+    interface WriteRequestSourceIfc#(accWidth) requests;
+    interface WriteResponseSinkIfc responses;
+endinterface
+
+function AquaMemoryTxnId memoryTransactionId(MatrixExtent index);
+    return zeroExtend(index);
+endfunction
+
 typedef struct {
     MatmulJobId jobId;
     StripeId stripeId;
-    MacroTileId macroTileId;
     ArrayWorkId arrayWorkId;
 } StoreCompletion deriving (Bits, Eq, FShow);
 

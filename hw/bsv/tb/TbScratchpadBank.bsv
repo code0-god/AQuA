@@ -2,7 +2,7 @@ package TbScratchpadBank;
 
 import Assert::*;
 import Vector::*;
-import ScratchpadBank::*;
+import Scratchpad::*;
 
 function Vector#(4, Int#(8)) firstRow;
     Vector#(4, Int#(8)) value = replicate(0);

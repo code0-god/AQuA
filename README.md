@@ -1,15 +1,10 @@
 # AQuA
 
-**Adaptive Quantization Accelerator**
+**적응형 양자화 가속기**
 
-AQuA targets an end-to-end LLM accelerator that integrates hardware-native
-adaptive quantization into transformer execution. The current milestone is a
-CPU-shadow Candle integration plus deterministic Rust ExSIA and RaCo
-references, profile-safe Q8_HP1 loading, and canonical integer-weight
-extraction, with a resource-aware tiler and executable BSV local-memory,
-scheduler, and provider-staging foundation.
+AQuA는 하드웨어 네이티브 적응형 양자화를 트랜스포머 실행에 통합하는 엔드투엔드 LLM 가속기를 목표로 한다. 현재 마일스톤은 CPU-shadow Candle 통합, 결정론적 Rust ExSIA 및 RaCo 참조 구현, 프로파일 안전 Q8_HP1 로딩, 정규 정수 가중치 추출과 함께, 리소스를 고려하는 타일러 및 실행 가능한 BSV 로컬 메모리, 스케줄러, 공급자 스테이징 기반이다.
 
-## Implemented architecture
+## 구현된 아키텍처
 
 ```text
 Candle Tensor
@@ -17,18 +12,18 @@ Candle Tensor
        v
 Device::Aqua / AquaStorage
        |
-       +---------------- unsupported operation --> Candle CPU fallback
+       +---------------- 지원되지 않는 연산 --> Candle CPU 폴백
        |
-       `---------------- supported floating matmul
+       `---------------- 지원되는 부동소수점 matmul
                                 |
                                 v
-      exact logical layout materialization
+      정확한 논리 레이아웃 구체화
                |
                v
-       canonical F32 HostTensor
+       정규 F32 HostTensor
                |
                v
- FixedStripePlanner (integration policy only)
+ FixedStripePlanner (통합 정책 전용)
                |
                v
        ActivationExecutionPlan
@@ -39,176 +34,150 @@ Device::Aqua / AquaStorage
         +-----------------------------+
         |                             |
         v                             v
- dense I4/I8/I16                ResidualStripe
-        |                       local row / K / i32
+ 밀집 I4/I8/I16                 ResidualStripe
+        |                       로컬 행 / K / i32
         |                             |
         |                             v
-        |                    Rust RaCo Reference
+        |                    Rust RaCo 참조 구현
         |                             |
         |                  +----------+----------+
         |                  |          |          |
         |                  v          v          v
-        |             balanced    compact K  active lanes
-        |               radix
+        |              균형형      압축된 K   활성 레인
+        |               기수
         |                  \          |          /
         |                   \         |         /
         |                    v        v        v
-        |                       integer dot
+        |                       정수 내적
         |                            |
         |                            v
-        |                    radix composition
+        |                       기수 합성
         |                            |
         |                            v
-        |                 raw integer correction
+        |                    원시 정수 보정
         |
         v
  dequantize_dense: q * 2^theta
-        Q-only lossy reconstruction
+        Q 전용 손실 재구성
                |
                v
         Candle CPU matmul
                |
                v
- Device::Aqua CPU-shadow result
+ Device::Aqua CPU-shadow 결과
 ```
 
-The implemented crates have these responsibilities:
+구현된 크레이트의 역할은 다음과 같다.
 
-* `aqua-protocol`: Candle-independent tensor and protocol semantics.
-* `aqua-runtime`: canonical F32 `HostTensor` plus validated activation matrix
-  and stripe-plan geometry, validated hardware capacities, and deterministic
-  resource-aware macro-tile selection.
-* `aqua-exsia`: ExSIA-specific contracts, the canonical sequential reference,
-  and public dense Q-only dequantization. `dequantize_dense` deliberately
-  ignores residual events and is not residual-aware reconstruction.
-* `aqua-raco`: deterministic signed-21-bit balanced-radix decomposition,
-  canonical 32-wide block/K and active-lane compaction, dense integer
-  weight-code execution, radix composition, and raw integer correction.
-  Public read-only stage contracts are suitable for BSV golden comparison.
-* `aqua-weight`: Candle-independent Q8_HP1 raw-block parsing, canonical
-  `[row][K]` integer codes, per-block left shifts, exact row-scale exponents,
-  deterministic role classification, registry, and model statistics.
-* `aqua-candle`: framework adapter, integration-only `FixedStripePlanner`,
-  `DenseQOnlyAquaExecutor`, GGUF weight-capture executor, and `Device::Aqua`
-  factories.
-* `third_party/candle`: the AQuA Candle fork. Its feature-gated Aqua backend
-  stores CPU shadows, decodes Q8_H numeric IDs only in profile-identified
-  GGUF files, exposes raw GGUF tensors to an injected executor, and falls back
-  to normal CPU execution.
-* `aqua-host`: host-boundary smoke executable plus `inspect-hp1` model
-  inspection and canonical parity command.
-* `hw/bsv`: BSC-checked banked activation/weight/HP1/accumulator memories,
-  tiled matmul and block-bounded K schedulers, tagged provider load/store
-  staging, Bluesim contract tests, and representative RTL generation.
+* `aqua-protocol`: Candle과 독립적인 텐서 및 프로토콜 의미 체계.
+* `aqua-runtime`: 정규 F32 `HostTensor`, 검증된 활성화 행렬 및 스트라이프 계획 기하 구조, 검증된 하드웨어 용량, 결정론적인 리소스 인식 매크로 타일 선택.
+* `aqua-exsia`: ExSIA 전용 계약, 정규 순차 참조 구현, 공개 밀집 Q 전용 역양자화. `dequantize_dense`는 의도적으로 잔차 이벤트를 무시하며 잔차 인식 재구성이 아니다.
+* `aqua-raco`: 결정론적 부호 있는 21비트 균형형 기수 분해, 정규 너비 32 블록/K 및 활성 레인 압축, 밀집 정수 가중치 코드 실행, 기수 합성, 원시 정수 보정. 공개 읽기 전용 단계 계약은 BSV 골든 비교에 적합하다.
+* `aqua-weight`: Candle과 독립적인 Q8_HP1 원시 블록 파싱, 정규 `[row][K]` 정수 코드, 블록별 좌측 시프트, 정확한 행 스케일 지수, 결정론적 역할 분류, 레지스트리, 모델 통계.
+* `aqua-candle`: 프레임워크 어댑터, 통합 전용 `FixedStripePlanner`, `DenseQOnlyAquaExecutor`, GGUF 가중치 캡처 실행기, `Device::Aqua` 팩토리.
+* `third_party/candle`: AQuA Candle 포크. 기능 플래그로 제어되는 Aqua 백엔드는 CPU 섀도를 저장하고, 프로파일로 식별된 GGUF 파일에서만 Q8_H 숫자 ID를 디코딩하며, 주입된 실행기에 원시 GGUF 텐서를 노출하고, 일반 CPU 실행으로 폴백한다.
+* `aqua-host`: 호스트 경계 스모크 실행 파일, `inspect-hp1` 모델 검사 및 정규 동등성 명령.
+* `hw/bsv`: BSC로 검사된 뱅크형 활성화/가중치/HP1/누산기 메모리, 타일형 matmul 및 블록 경계 K 스케줄러, 태그가 지정된 공급자 로드/스토어 스테이징, Bluesim 계약 테스트, 대표 RTL 생성.
 
-`tensor_to_host` accepts supported floating tensors on any Candle device by
-copying them to CPU, converting them to F32, making their logical layout
-contiguous, and preserving their logical shape. `host_to_tensor_on` constructs
-a canonical host tensor on a selected Candle device; `host_to_tensor` remains
-the CPU convenience API.
+### BSV 실행 기반
 
-`DenseQOnlyAquaExecutor` intercepts dense F16, BF16, F32, and F64 matmul. It
-materializes both Candle request layouts in exact logical order, canonicalizes
-them to F32, runs ExSIA over the left activation using an externally
-constructed execution plan, performs lossy Q-only `q * 2^theta`
-reconstruction, and delegates the final multiplication to Candle's CPU
-matmul. Mismatched or unsupported dtypes and non-intercepted operations use
-the CPU-shadow fallback.
+현재 프로덕션 BSV 트리는 구현된 기반만 표현하는 13개 패키지다.
 
-`FixedStripePlanner` is deterministic bridge policy for integration and tests.
-It is intentionally located in `aqua-candle`; it is not a runtime tiler,
-hardware-capacity model, scratchpad planner, or part of canonical ExSIA
-configuration.
+```text
+hw/bsv/src/
+├── common/
+│   ├── AquaTypes.bsv
+│   ├── AquaWorkTypes.bsv
+│   └── AquaMemoryProtocol.bsv
+├── control/
+│   ├── MatmulScheduler.bsv
+│   ├── WorkScheduler.bsv
+│   ├── LoadController.bsv
+│   └── StoreController.bsv
+└── memory/
+    ├── AquaLocalAddr.bsv
+    ├── Scratchpad.bsv
+    ├── Hp1MetaMem.bsv
+    ├── AccumulatorMem.bsv
+    ├── LoadStager.bsv
+    └── AquaMemorySubsystem.bsv
+```
 
-`AquaTileSelector` is separate host/runtime hardware policy. It preserves the
-Gemmini J-then-I-then-K factor growth order while checking independent
-activation, weight, HP1 metadata, accumulator, and full-logical-K ExSIA slot
-capacities. Its selected stripe rows are frozen into a validated
-`ActivationExecutionPlan` before ExSIA execution.
+`MatmulScheduler`는 스트라이프 안에서 J를 I보다 먼저 진행하고 매크로 N
+경계에서 I를 다시 시작한다. `WorkScheduler`는 현재 `ArrayWork`의 논리 K
+범위만 32-wide HP1 블록 경계를 넘지 않는 프래그먼트로 나눈다.
 
-## ExSIA boundary
+`LoadController`는 활성 작업과 네 개의 독립적인 활성값, 가중치, block-scale,
+row-shift 단일 outstanding 채널을 소유한다. 각 채널은 종류 판별자가 없는
+타입 지정 요청/응답 포트다. 공급자는 요청을 소비한 다음 사이클부터만 응답할
+수 있으며, `LoadStager`는 태그, 로컬 영역, 범위, 메타데이터 마스크를 검증한
+뒤에만 쓰기를 수행한다.
 
-The canonical ExSIA input is a validated contiguous F32 `HostTensor` paired
-with an externally supplied `ActivationExecutionPlan`. Stripe boundaries are
-execution context, target precision is ExSIA configuration, and
-`AQUA_BLOCK_SIZE = 32` is the shared immutable K-coordinate contract for
-ExSIA, RaCo, and future integer-weight scale groups. Changing stripe grouping
-can change stripe exponents and thus execution semantics.
+HP1 block-scale과 row-shift 응답은 요청한 J 열별 벡터와 유효 마스크를
+전달한다. 부분 J 작업은 비활성 레인을 보존하며 `ZeroBlock`도 일반
+block-scale 값처럼 열별로 유지한다. 활성값 및 가중치 스크래치패드의 뱅크/행
+기하와 누산기 뱅크 수는 서로 독립적인 매개변수다.
 
-ExSIA emits clipped quantized values, per-stripe theta values, and
-stripe-scoped residual events. Residual coordinates use stripe-local row and
-original logical K. The current Candle bridge consumes only clipped values and
-theta. The Rust RaCo reference consumes residuals separately and computes raw
-`residual integer × integer weight code` corrections without applying
-activation theta or weight scales.
+현재 BSV 주소와 작업 계약에는 슬롯, 이중 버퍼 컨텍스트 또는 매크로 K
+식별자가 없다. 실제 동시 residency와 `AquaLoopMatmul` 매크로 K 순회가
+구현될 때 해당 상태와 검증을 함께 다시 도입한다.
 
-The Rust reference is the semantic contract for a future BSV implementation.
-AQuA deliberately flushes subnormal activation values to zero to make the
-hardware-oriented behavior explicit.
+`tensor_to_host`는 임의의 Candle 장치에 있는 지원되는 부동소수점 텐서를 CPU로 복사하고, F32로 변환하며, 논리 레이아웃을 연속적으로 만들고, 논리적 형상을 보존하여 받아들인다. `host_to_tensor_on`은 선택한 Candle 장치에 정규 호스트 텐서를 생성하며, `host_to_tensor`는 CPU 편의 API로 유지된다.
 
-## Current scope and deferred work
+`DenseQOnlyAquaExecutor`는 밀집 F16, BF16, F32, F64 matmul을 가로챈다. 두 Candle 요청 레이아웃을 정확한 논리 순서로 구체화하고, F32로 정규화하며, 외부에서 생성된 실행 계획을 사용하여 왼쪽 활성화에 ExSIA를 실행하고, 손실이 있는 Q 전용 `q * 2^theta` 재구성을 수행한 뒤, 최종 곱셈을 Candle의 CPU matmul에 위임한다. 일치하지 않거나 지원되지 않는 dtype과 가로채지 않은 연산은 CPU-shadow 폴백을 사용한다.
 
-This milestone provides model-quality/emulation plumbing, not accelerator
-residency or acceleration. Specifically:
+`FixedStripePlanner`는 통합 및 테스트를 위한 결정론적 브리지 정책이다. 의도적으로 `aqua-candle`에 위치하며, 런타임 타일러, 하드웨어 용량 모델, 스크래치패드 플래너 또는 정규 ExSIA 구성의 일부가 아니다.
 
-* `Device::Aqua` uses CPU-shadow `Storage::Aqua`.
-* Quantized Candle weights remain in existing CPU/CUDA/Metal `QStorage`; there
-  is no `QStorage::Aqua`.
-* Dense Q-only reconstruction is lossy and performs no residual addition.
-* RaCo balanced radix, logical stripe work, integer weight-code execution,
-  radix composition, and direct exact-parity tests are implemented.
-* Q8_HP1 GGUF profile detection, load interception, canonical weight
-  extraction, block-left-shift statistics, and row-scale statistics are
-  implemented.
-* Resource-aware Rust macro-tile selection and activation-plan generation are
-  implemented. BSV schedulers expand stripes into partial DIM-bounded array
-  works and split K into canonical 32-wide-block-bounded fragments.
-* The BSV memory foundation implements typed local addresses, separate banked
-  activation and weight scratchpads, HP1 metadata, wide accumulation, and
-  response-backpressured reads and writes.
-* Tagged BSV load/store staging covers activation, canonical `[J][K]` weight
-  codes, HP1 block/row metadata, raw accumulator output, same-cycle or delayed
-  provider responses, and acknowledgement-gated completion.
-* There is no full Candle RaCo executor, ExSIF scale integration, physical
-  packet format, or accelerator-resident RaCo storage.
-* There is no model-compiled block-shift LUT, physical provider adapter,
-  weight image, HP1 integer execution path, or RaCo/weight-scale merge.
-* The WS systolic array and PE preload/reorder are deferred; this foundation
-  contains no matrix datapath integration.
-* BSV ExSIA and BSV RaCo execution remain deferred to bit-exact datapath
-  phases.
-* `AquaLoopMatmul` two-context load/execute overlap and physical DMA remain
-  deferred. Current provider interfaces are logical simulation boundaries,
-  not an interconnect implementation.
-* Intermediate tensors are not accelerator-resident.
-* There is no ExSIF, KV-cache offload, UART, PCIe, or FPGA board support.
+`AquaTileSelector`는 별도의 호스트/런타임 하드웨어 정책이다. 독립적인 활성화, 가중치, HP1 메타데이터, 누산기, 전체 논리 K ExSIA 슬롯 용량을 검사하면서 Gemmini의 J-이후-I-이후-K 인수 증가 순서를 보존한다. 선택된 스트라이프 행은 ExSIA 실행 전에 검증된 `ActivationExecutionPlan`에 고정된다.
 
-RaCo remains separate from Q-only dequantization. The Rust core stops at raw
-integer correction; floating scale integration and Candle result addition are
-future layers.
+## ExSIA 경계
 
-## Candle fork
+정규 ExSIA 입력은 외부에서 제공된 `ActivationExecutionPlan`과 쌍을 이루는 검증된 연속 F32 `HostTensor`이다. 스트라이프 경계는 실행 컨텍스트이고, 목표 정밀도는 ExSIA 구성이며, `AQUA_BLOCK_SIZE = 32`는 ExSIA, RaCo, 향후 정수 가중치 스케일 그룹이 공유하는 불변 K 좌표 계약이다. 스트라이프 그룹화를 변경하면 스트라이프 지수가 달라질 수 있으며, 따라서 실행 의미 체계도 달라질 수 있다.
 
-Candle is a Git submodule at `third_party/candle`, tracking the AQuA integration
-fork and branch declared in `.gitmodules`:
+ExSIA는 클리핑된 양자화 값, 스트라이프별 theta 값, 스트라이프 범위 잔차 이벤트를 방출한다. 잔차 좌표는 스트라이프 로컬 행과 원래 논리 K를 사용한다. 현재 Candle 브리지는 클리핑된 값과 theta만 소비한다. Rust RaCo 참조 구현은 잔차를 별도로 소비하며 활성화 theta 또는 가중치 스케일을 적용하지 않고 원시 `잔차 정수 × 정수 가중치 코드` 보정을 계산한다.
+
+Rust 참조 구현은 향후 BSV 구현을 위한 의미 체계 계약이다. AQuA는 하드웨어 지향 동작을 명시적으로 만들기 위해 비정규 활성화 값을 의도적으로 0으로 플러시한다.
+
+## 현재 범위 및 연기된 작업
+
+이 마일스톤은 모델 품질/에뮬레이션 배관을 제공하며, 가속기 상주 또는 가속을 제공하지 않는다. 구체적으로 다음과 같다.
+
+* `Device::Aqua`는 CPU-shadow `Storage::Aqua`를 사용한다.
+* 양자화된 Candle 가중치는 기존 CPU/CUDA/Metal `QStorage`에 남아 있으며, `QStorage::Aqua`는 없다.
+* 밀집 Q 전용 재구성은 손실이 있으며 잔차를 추가하지 않는다.
+* RaCo 균형형 기수, 논리 스트라이프 작업, 정수 가중치 코드 실행, 기수 합성, 직접적인 정확 동등성 테스트가 구현되어 있다.
+* Q8_HP1 GGUF 프로파일 감지, 로드 가로채기, 정규 가중치 추출, 블록 좌측 시프트 통계, 행 스케일 통계가 구현되어 있다.
+* 리소스를 고려하는 Rust 매크로 타일 선택과 활성화 계획 생성이 구현되어 있다. BSV 스케줄러는 스트라이프를 부분적인 DIM 경계 배열 작업으로 확장하고, K를 정규 너비 32 블록 경계 조각으로 분할한다.
+* BSV 메모리 기반은 타입이 지정된 로컬 주소, 별도의 뱅크형 활성화 및 가중치 스크래치패드, HP1 메타데이터, 광폭 누산, 응답 백프레셔가 적용된 읽기 및 쓰기를 구현한다.
+* 태그가 지정된 BSV 로드/스토어 스테이징은 활성화, 정규 `[J][K]` 가중치 코드, J 열별 HP1 블록/행 메타데이터, 원시 누산기 출력, 요청 소비 후 최소 한 사이클 뒤의 공급자 응답, 확인 응답으로 제어되는 완료를 포괄한다.
+* 완전한 Candle RaCo 실행기, ExSIF 스케일 통합, 물리 패킷 형식 또는 가속기 상주 RaCo 스토리지는 없다.
+* 모델 컴파일된 블록 시프트 LUT, 물리 공급자 어댑터, 가중치 이미지, HP1 정수 실행 경로 또는 RaCo/가중치 스케일 병합은 없다.
+* WS 시스톨릭 배열과 PE 프리로드/재정렬은 연기되었으며, 이 기반에는 행렬 데이터패스 통합이 없다.
+* BSV ExSIA 및 BSV RaCo 실행은 비트 단위 정확한 데이터패스 단계로 연기되어 있다.
+* `AquaLoopMatmul`의 매크로 K 순회, 두 컨텍스트 로드/실행 중첩, 슬롯 할당과 물리 DMA는 연기되어 있다. 아직 구현되지 않은 슬롯 또는 매크로 K 상태는 현재 BSV 계약에 포함하지 않는다. 공급자 인터페이스는 논리적 시뮬레이션 경계이며, 상호 연결 구현이 아니다.
+* 중간 텐서는 가속기에 상주하지 않는다.
+* ExSIF, KV-cache 오프로딩, UART, PCIe 또는 FPGA 보드 지원은 없다.
+
+RaCo는 Q 전용 역양자화와 분리되어 있다. Rust 코어는 원시 정수 보정에서 멈추며, 부동소수점 스케일 통합과 Candle 결과 덧셈은 향후 계층이다.
+
+## Candle 포크
+
+Candle은 `third_party/candle`에 있는 Git 서브모듈이며, `.gitmodules`에 선언된 AQuA 통합 포크와 브랜치를 추적한다.
 
 ```text
 https://github.com/code0-god/candle-AQuA.git
 aqua/integration
 ```
 
-The Candle-side executor trait contains no AQuA repository types, preserving
-the dependency direction: Candle defines an injection boundary and
-`aqua-candle` implements it. The unrelated `aqua-runtime::AquaExecutor` host
-trait is not modified or conflated with `candle_core::AquaExecutor`.
+Candle 측 실행기 트레이트에는 AQuA 저장소 타입이 포함되지 않아 의존성 방향을 보존한다. Candle은 주입 경계를 정의하고 `aqua-candle`이 이를 구현한다. 관련이 없는 `aqua-runtime::AquaExecutor` 호스트 트레이트는 수정되지 않으며 `candle_core::AquaExecutor`와 혼합되지 않는다.
 
-After a fresh clone:
+새로 클론한 후:
 
 ```bash
 git submodule update --init --recursive
 ```
 
-## Development
+## 개발
 
 ```bash
 cargo fmt --check
@@ -223,13 +192,11 @@ cargo run -p aqua-host --release -- inspect-hp1 <model.gguf>
 make -C hw/bsv verify
 ```
 
-## Roadmap
+## 로드맵
 
-1. Migrate and validate the weight-stationary systolic array and PE preload
-   reorder without changing canonical `[J][K]` provider meaning.
-2. Add the model-compiled block-shift LUT and HP1 integer execution units.
-3. Implement and bit-exactly validate the BSV ExSIA and RaCo datapaths.
-4. Add `AquaLoopMatmul` two-context load/execute/store overlap.
-5. Attach a physical DMA adapter below the tagged provider boundary.
-6. Integrate RaCo/ExSIF scaling, nonlinear transformer operations, and
-   accelerator-resident tensors.
+1. 정규 `[J][K]` 공급자 의미를 변경하지 않고 가중치 고정형 시스톨릭 배열과 PE 프리로드 재정렬을 이식하고 검증한다.
+2. 모델 컴파일된 블록 시프트 LUT와 HP1 정수 실행 유닛을 추가한다.
+3. BSV ExSIA 및 RaCo 데이터패스를 구현하고 비트 단위로 정확하게 검증한다.
+4. `AquaLoopMatmul`의 두 컨텍스트 로드/실행/스토어 중첩을 추가한다.
+5. 태그가 지정된 공급자 경계 아래에 물리 DMA 어댑터를 연결한다.
+6. RaCo/ExSIF 스케일링, 비선형 트랜스포머 연산, 가속기 상주 텐서를 통합한다.
