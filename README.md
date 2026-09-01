@@ -5,7 +5,8 @@
 AQuA targets an end-to-end LLM accelerator that integrates hardware-native
 adaptive quantization into transformer execution. The current milestone is a
 CPU-shadow Candle integration plus deterministic Rust ExSIA and RaCo
-references for future BSV implementation.
+references, profile-safe Q8_HP1 loading, and canonical integer-weight
+extraction for future BSV implementation.
 
 ## Implemented architecture
 
@@ -83,12 +84,18 @@ The implemented crates have these responsibilities:
   canonical 32-wide block/K and active-lane compaction, dense integer
   weight-code execution, radix composition, and raw integer correction.
   Public read-only stage contracts are suitable for BSV golden comparison.
+* `aqua-weight`: Candle-independent Q8_HP1 raw-block parsing, canonical
+  `[row][K]` integer codes, per-block left shifts, exact row-scale exponents,
+  deterministic role classification, registry, and model statistics.
 * `aqua-candle`: framework adapter, integration-only `FixedStripePlanner`,
-  `DenseQOnlyAquaExecutor`, and the `Device::Aqua` factory.
+  `DenseQOnlyAquaExecutor`, GGUF weight-capture executor, and `Device::Aqua`
+  factories.
 * `third_party/candle`: the AQuA Candle fork. Its feature-gated Aqua backend
-  stores CPU shadows, injects an operation executor, and falls back to normal
-  CPU execution for operations the executor does not handle.
-* `aqua-host`: host-boundary smoke executable.
+  stores CPU shadows, decodes Q8_H numeric IDs only in profile-identified
+  GGUF files, exposes raw GGUF tensors to an injected executor, and falls back
+  to normal CPU execution.
+* `aqua-host`: host-boundary smoke executable plus `inspect-hp1` model
+  inspection and canonical parity command.
 * `hw/bsv`: source and testbench boundary for future hardware work.
 
 `tensor_to_host` accepts supported floating tensors on any Candle device by
@@ -141,8 +148,13 @@ residency or acceleration. Specifically:
 * Dense Q-only reconstruction is lossy and performs no residual addition.
 * RaCo balanced radix, logical stripe work, integer weight-code execution,
   radix composition, and direct exact-parity tests are implemented.
+* Q8_HP1 GGUF profile detection, load interception, canonical weight
+  extraction, block-left-shift statistics, and row-scale statistics are
+  implemented.
 * There is no full Candle RaCo executor, ExSIF scale integration, physical
   packet format, or accelerator-resident RaCo storage.
+* There is no block-shift LUT contract, BSV HP1 weight provider, physical
+  weight image, Q8_HP1 execution path, or RaCo/weight-scale merge.
 * There is no BSV ExSIA datapath, transport, hardware tiler, asynchronous
   execution, systolic-array connection, or nonlinear-operation integration.
 * Intermediate tensors are not accelerator-resident.
@@ -183,13 +195,15 @@ cargo test -p aqua-candle --test round_trip
 cargo test -p aqua-candle --test aqua_device
 cargo clippy --workspace --all-targets -- -D warnings
 cargo run -p aqua-host
+cargo run -p aqua-host --release -- inspect-hp1 <model.gguf>
 ```
 
 ## Roadmap
 
-1. Integrate RaCo correction scaling with future ExSIF weight scales.
-2. Generate golden vectors from real Candle LLM activations.
-3. Implement and bit-exactly validate the BSV ExSIA and RaCo datapaths.
-4. Connect ExSIA and RaCo correction to accelerator execution.
+1. Define the model-compiled block-shift LUT contract from measured profiles.
+2. Implement the BSV Q8_HP1 weight provider without changing canonical weight
+   meaning.
+3. Integrate RaCo correction scaling with future ExSIF weight scales.
+4. Implement and bit-exactly validate the BSV ExSIA and RaCo datapaths.
 5. Add explicit hardware tiling, transport, and asynchronous execution.
 6. Add nonlinear transformer operations and accelerator-resident tensors.

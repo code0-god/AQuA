@@ -6,4 +6,5 @@ license.workspace = true
 
 [dependencies]
 aqua-candle = { path = "../../crates/aqua-candle" }
+aqua-weight = { path = "../../crates/aqua-weight" }
 candle-core = { path = "../../third_party/candle/candle-core" }

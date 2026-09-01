@@ -38,6 +38,7 @@ dependencies = [
  "aqua-exsia",
  "aqua-protocol",
  "aqua-runtime",
+ "aqua-weight",
  "candle-core",
 ]
 
@@ -54,6 +55,7 @@ name = "aqua-host"
 version = "0.1.0"
 dependencies = [
  "aqua-candle",
+ "aqua-weight",
  "candle-core",
 ]
 
@@ -72,6 +74,13 @@ dependencies = [
 
 [[package]]
 name = "aqua-runtime"
+version = "0.1.0"
+dependencies = [
+ "aqua-protocol",
+]
+
+[[package]]
+name = "aqua-weight"
 version = "0.1.0"
 dependencies = [
  "aqua-protocol",
