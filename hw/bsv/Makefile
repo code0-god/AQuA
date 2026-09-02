@@ -23,7 +23,8 @@ BSV_SOURCE_FILES := \
 	src/memory/LoadStager.bsv \
 	src/memory/AquaMemorySubsystem.bsv \
 	src/control/WorkScheduler.bsv \
-	src/control/MatmulScheduler.bsv
+	src/control/MatmulScheduler.bsv \
+	src/control/AquaLoopMatmul.bsv
 
 BSV_TEST_TOPS := \
 	mkTbHardwareContracts \
@@ -35,6 +36,11 @@ BSV_TEST_TOPS := \
 	mkTbWorkScheduler \
 	mkTbMatmulScheduler \
 	mkTbMatmulMacroK \
+	mkTbAquaLoopMatmul \
+	mkTbAquaLoopMatmulDim32 \
+	mkTbAquaLoopMatmulDim64 \
+	mkTbAquaLoopMatmulAsync \
+	mkTbAquaLoopAccumulatorMapping \
 	mkTbMockAquaProvider \
 	mkTbLoadController \
 	mkTbStoreController \
@@ -50,6 +56,9 @@ BSV_EXPECT_FAIL_TOPS := \
 	mkTbMatmulInvalidMacroKZero \
 	mkTbMatmulInvalidMacroKLarge \
 	mkTbMatmulWrongStripeId \
+	mkTbLoopWrongLoadCompletion \
+	mkTbLoopWrongExecuteCompletion \
+	mkTbLoopWrongStoreCompletion \
 	mkTbHp1BlockDepthOverflow \
 	mkTbHp1RowDepthOverflow \
 	mkTbActivationLoadDepthOverflow \
@@ -63,12 +72,14 @@ BSV_NO_ASSERT_TEST_TOPS := \
 	mkTbStoreInvalidWorkGate \
 	mkTbAccumulatorOverflowGate \
 	mkTbWorkRangeOverflowGate \
-	mkTbMatmulInvalidInputGate
+	mkTbMatmulInvalidInputGate \
+	mkTbLoopInvalidCompletionGate
 
 SYNTH_TOPS := \
 	mkMemorySynthTop \
 	mkSchedulerSynthTop \
-	mkMemorySubsystemSynthTop
+	mkMemorySubsystemSynthTop \
+	mkLoopMatmulSynthTop
 
 .PHONY: check bsv-test bsv-test-one bsv-test-no-assert \
 	bsv-test-no-assert-one rtl-one verify clean
@@ -126,6 +137,9 @@ bsv-test: | $(BUILD_DIR)/bsc $(BUILD_DIR)/sim $(BUILD_DIR)/info $(BUILD_DIR)/bin
 	    mkTbMatmulInvalidMacroKZero) expected='macro K tile must be nonempty' ;; \
 	    mkTbMatmulInvalidMacroKLarge) expected='macro K tile exceeds logical K' ;; \
 	    mkTbMatmulWrongStripeId) expected='stripe publication ID mismatch' ;; \
+	    mkTbLoopWrongLoadCompletion) expected='load completion mismatch' ;; \
+	    mkTbLoopWrongExecuteCompletion) expected='execute completion mismatch' ;; \
+	    mkTbLoopWrongStoreCompletion) expected='store completion mismatch' ;; \
 	    mkTbHp1BlockDepthOverflow) expected='HP1 block metadata out of range' ;; \
 	    mkTbHp1RowDepthOverflow) expected='HP1 row metadata out of range' ;; \
 	    mkTbActivationLoadDepthOverflow) expected='activation local row exceeds configured rows' ;; \
