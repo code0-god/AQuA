@@ -81,7 +81,7 @@ Device::Aqua / AquaStorage
 
 ### BSV 실행 기반
 
-현재 프로덕션 BSV 트리는 구현된 기반만 표현하는 13개 패키지다.
+현재 프로덕션 BSV 트리는 구현된 기반만 표현하는 14개 패키지다.
 
 ```text
 hw/bsv/src/
@@ -93,7 +93,8 @@ hw/bsv/src/
 │   ├── MatmulScheduler.bsv
 │   ├── WorkScheduler.bsv
 │   ├── LoadController.bsv
-│   └── StoreController.bsv
+│   ├── StoreController.bsv
+│   └── AquaLoopMatmul.bsv
 └── memory/
     ├── AquaLocalAddr.bsv
     ├── Scratchpad.bsv
@@ -103,21 +104,24 @@ hw/bsv/src/
     └── AquaMemorySubsystem.bsv
 ```
 
-`MatmulScheduler`는 스트라이프 안에서 J를 I보다 먼저 진행하고 매크로 N
-경계에서 I를 다시 시작한다. `WorkScheduler`는 현재 `ArrayWork`의 논리 K
-범위만 32-wide HP1 블록 경계를 넘지 않는 프래그먼트로 나눈다.
+`AquaMatmulDescriptor.macroKTileElements`는 Rust
+`AquaTilePlan.k_tile_elements()`와 같은 concrete K extent 의미를 가진다.
+`MatmulScheduler`는 스트라이프 안에서 J, I, 매크로 K, 매크로 N 순서로
+진행하고 실제 `ArrayWork.kTileStart/kTileCount`를 만든다. `WorkScheduler`는
+각 매크로 K 범위를 DIM 및 32-wide HP1 블록 경계 프래그먼트로 나눈다.
 
-RTL의 매크로 K 순회는 아직 구현되지 않았다. 현재 BSV 스케줄러는 하나의
-명시적인 전체 논리 K 범위를 사용하고, `WorkScheduler`가 이를 DIM 및
-32-element 블록 경계 프래그먼트로 분할한다. Rust의 `k_tile_elements`는
-리소스 인식 계획에 계속 포함되며, `AquaLoopMatmul`이 추가될 때 실제 RTL
-실행 경계가 된다.
+`AquaLoopMatmul`은 단일 컨텍스트에서 각 프래그먼트의 load, execute
+protocol completion을 조정한다. non-final 매크로 K는 store 없이
+`ArrayWork`를 retire하고, final 매크로 K만 `StoreWork`를 발행한다.
+최종 output acknowledgement가 `StoreCompletion`을 만든 뒤에만 scheduler
+work와 stripe가 retire된다. load/execute/store completion은 전체 identity가
+일치해야 하며 assertions-disabled 빌드에서도 잘못된 completion은 상태를
+진행시키지 않는다.
 
-작은 WS arithmetic bring-up/test는 현재의 full-logical-K →
-`WorkScheduler` fragment 경로를 임시로 재사용할 수 있다. 이는 unit bring-up
-경로일 뿐 production tiled execution architecture가 아니다. 전체 accelerator
-execution path는 `AquaLoopMatmul`이 Rust `k_tile_elements`를 RTL 매크로 K
-범위로 연결한 뒤 WS/PE 실행과 통합되어야 완료된 것으로 본다.
+현재 로컬 메모리는 프래그먼트마다 고정 staging 영역을 재사용한다. execute는
+작업/완료 protocol과 testbench executor만 있으며 production PE/WS arithmetic
+datapath는 없다. 따라서 매크로 K 제어가 연결되었어도 full macro-tile
+residency, activation/weight 재사용 또는 가속 실행이 완료된 것은 아니다.
 
 `LoadController`는 활성 작업과 네 개의 독립적인 활성값, 가중치, block-scale,
 row-shift 단일 outstanding 채널을 소유한다. 각 채널은 종류 판별자가 없는
@@ -132,9 +136,10 @@ depth와 width를 가지며, 부분 J 작업은 비활성 레인을 보존한다
 가중치 스크래치패드의 뱅크/행 기하는 독립적이지만, 현재 첫 하드웨어 계약의
 누산기 뱅크 수는 `array_dim`과 같고 bank folding은 구현하지 않는다.
 
-현재 BSV 주소와 작업 계약에는 슬롯, 이중 버퍼 컨텍스트 또는 매크로 K
-식별자가 없다. 실제 동시 residency와 `AquaLoopMatmul` 매크로 K 순회가
-구현될 때 해당 상태와 검증을 함께 다시 도입한다.
+현재 BSV 주소 계약에는 슬롯이나 이중 버퍼 컨텍스트가 없다. 매크로 K
+실행 범위는 descriptor와 `ArrayWork`에 존재하지만 activation/weight는
+프래그먼트 실행 완료 뒤 같은 staging 주소를 재사용한다. 실제 동시
+residency와 할당 충돌 검증이 구현될 때만 슬롯 상태를 도입한다.
 
 `tensor_to_host`는 임의의 Candle 장치에 있는 지원되는 부동소수점 텐서를 CPU로 복사하고, F32로 변환하며, 논리 레이아웃을 연속적으로 만들고, 논리적 형상을 보존하여 받아들인다. `host_to_tensor_on`은 선택한 Candle 장치에 정규 호스트 텐서를 생성하며, `host_to_tensor`는 CPU 편의 API로 유지된다.
 
@@ -166,14 +171,15 @@ Rust 참조 구현은 향후 BSV 구현을 위한 의미 체계 계약이다. AQ
 * 밀집 Q 전용 재구성은 손실이 있으며 잔차를 추가하지 않는다.
 * RaCo 균형형 기수, 논리 스트라이프 작업, 정수 가중치 코드 실행, 기수 합성, 직접적인 정확 동등성 테스트가 구현되어 있다.
 * Q8_HP1 GGUF 프로파일 감지, 로드 가로채기, 정규 가중치 추출, 직접적인 블록 LEFT-shift 통계와 행 RIGHT-shift 통계가 구현되어 있다.
-* 리소스를 고려하는 Rust 매크로 타일 선택과 활성화 계획 생성이 구현되어 있다. BSV 스케줄러는 스트라이프를 부분적인 DIM 경계 배열 작업으로 확장하고, K를 정규 너비 32 블록 경계 조각으로 분할한다.
+* 리소스를 고려하는 Rust 매크로 타일 선택과 활성화 계획 생성이 구현되어 있다. BSV 스케줄러는 같은 의미의 `macroKTileElements`를 사용해 스트라이프/매크로 N/매크로 K/I/J를 순회하고, 각 매크로 K를 DIM 및 정규 너비 32 블록 경계 조각으로 분할한다.
 * BSV 메모리 기반은 타입이 지정된 로컬 주소, 별도의 뱅크형 활성화 및 가중치 스크래치패드, HP1 메타데이터, 광폭 누산, 응답 백프레셔가 적용된 읽기 및 쓰기를 구현한다.
 * 태그가 지정된 BSV 로드/스토어 스테이징은 활성화, 정규 `[J][K]` 가중치 코드, J 열별 HP1 블록/행 메타데이터, 원시 누산기 출력, 요청 소비 후 최소 한 사이클 뒤의 공급자 응답, 확인 응답으로 제어되는 완료를 포괄한다.
 * 완전한 Candle RaCo 실행기, ExSIF 스케일 통합, 물리 패킷 형식 또는 가속기 상주 RaCo 스토리지는 없다.
 * 직접적인 HP1 block LEFT-shift 및 row RIGHT-shift 메타데이터 저장은 구현되어 있지만, 해당 정수 시프트 산술 유닛, 물리 공급자 어댑터, 가중치 이미지 또는 RaCo/가중치 스케일 병합은 없다.
 * WS 시스톨릭 배열과 PE 프리로드/재정렬은 연기되었으며, 이 기반에는 행렬 데이터패스 통합이 없다.
 * BSV ExSIA 및 BSV RaCo 실행은 비트 단위 정확한 데이터패스 단계로 연기되어 있다.
-* `AquaLoopMatmul`의 매크로 K 순회, 두 컨텍스트 로드/실행 중첩, 슬롯 할당과 물리 DMA는 연기되어 있다. 아직 구현되지 않은 슬롯 또는 매크로 K 상태는 현재 BSV 계약에 포함하지 않는다. 공급자 인터페이스는 논리적 시뮬레이션 경계이며, 상호 연결 구현이 아니다.
+* 단일-context `AquaLoopMatmul`의 매크로 K load/execute/final-store 제어와 acknowledgement 기반 retirement가 구현되어 있다. execute는 protocol과 testbench double뿐이며 실제 산술 datapath가 아니다.
+* resident macro-tile preload, activation/weight 재사용, 두 컨텍스트 중첩, 슬롯 할당과 물리 DMA는 연기되어 있다. 공급자 인터페이스는 논리적 시뮬레이션 경계이며 상호 연결 구현이 아니다.
 * 중간 텐서는 가속기에 상주하지 않는다.
 * ExSIF, KV-cache 오프로딩, UART, PCIe 또는 FPGA 보드 지원은 없다.
 
@@ -213,7 +219,7 @@ make -C hw/bsv verify
 
 ## 로드맵
 
-1. `AquaLoopMatmul`로 Rust `k_tile_elements`를 RTL 매크로 K 순회와 `WorkScheduler` 입력 범위에 연결한다.
+1. `feat/bsv-tile-residency`에서 DIM-wide activation/weight preload, 매크로 K scratchpad residency, 재사용과 DIM64 lane slicing을 연결한다.
 2. 정규 `[J][K]` 공급자 의미를 유지하며 WS SystolicArray와 PE preload/reordering을 이식한다.
 3. HP1 block LEFT-shift 및 row RIGHT-shift 정수 실행 유닛을 추가한다.
 4. BSV ExSIA 데이터패스를 구현하고 비트 단위로 검증한다.

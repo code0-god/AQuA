@@ -22,7 +22,7 @@
 | IM2P.sim | AQuA | 마이그레이션된 동작 |
 |---|---|---|
 | `src/control/WorkTypes.bsv` | `AquaWorkTypes.bsv` | 텐서 ID와 타입이 지정된 로컬 주소를 사용하도록 재작성된 디스크립터 및 작업 필드의 의미 |
-| `src/control/MatmulScheduler.bsv` | `MatmulScheduler.bsv` | 스트라이프 순서, J 우선 I 순회, 2엔트리 FIFO, 즉시 미리보기, 순차 완료 |
+| `src/control/MatmulScheduler.bsv` | `MatmulScheduler.bsv` | 스트라이프, 매크로 N/K, J 우선 I 순회, 2엔트리 FIFO, 완료 전 좌표 유지 |
 | `src/control/WorkScheduler.bsv` | `WorkScheduler.bsv` | K 진행, 블록 경계 내 프래그먼트, 블록 인덱스, 누산, 1프래그먼트 미리보기 |
 | `src/io/HostMemoryTypes.bsv` | `AquaMemoryProtocol.bsv` | 내장된 호스트 포인터나 종류 판별자가 없는 타입 지정 요청/응답 포트 |
 | `src/common/Arithmetic.bsv` | 향후 `Arithmetic.bsv` | WS 데이터패스 마이그레이션까지 연기 |
@@ -42,8 +42,8 @@
 - 비동기 스트라이프는 연속적이고, 서로 겹치지 않으며, 범위 내에 있어야 한다.
 - 현재 작업이 실행되는 동안 다음 스트라이프 하나를 준비할 수 있다.
 - 스트라이프 완료는 해당 스트라이프의 마지막 작업이 완료된 후에만 방출된다.
-- `MatmulScheduler`의 세 좌표는 private `WorkPosition` 하나로 유지되며,
-  순수 next-position 함수가 J, I, 매크로 N 순서만 계산한다.
+- `MatmulScheduler`의 네 좌표는 private `WorkPosition` 하나로 유지되며,
+  순수 next-position 함수가 J, I, 매크로 K, 매크로 N 순서를 계산한다.
 - `WorkScheduler`는 다음을 사용한다.
 
   ```text
@@ -63,7 +63,7 @@
 | `Scratchpad.scala`의 `ScratchpadBank` | `Scratchpad.bsv` | 버퍼링된 읽기, 백프레셔, 쓰기 우선순위, 마스크 |
 | 스크래치패드 구성 | 분리된 활성화, 가중치 및 HP1 메타데이터 메모리 | 하나의 패킹된 주소 공간 없이 동시 소유권 제공 |
 | `AccumulatorMem.scala` | `AccumulatorMem.bsv` | 광폭 뱅크형 상태, 읽기-수정-쓰기 누산, 명시적 중재 |
-| `LoopMatmul.scala` | 향후 `AquaLoopMatmul` | 현재/다음 컨텍스트, 메모리 분할, 완료 기반 승격 |
+| `LoopMatmul.scala` | `AquaLoopMatmul.bsv` | 단일 active context의 load/execute/final-store 완료 조정과 acknowledgement 기반 retirement |
 | `LoadController.scala` | `LoadController.bsv` + `LoadStager.bsv` | 활성 작업/요청/reuse 소유권과 검증된 로컬 쓰기 분리 |
 | `StoreController.scala` | `StoreController.bsv` | 누산기 읽기, 출력 요청, 확인 응답에 의해 제어되는 완료 |
 | `Controller.scala` | 분리된 AQuA 컨트롤러 | 로드, 실행 및 저장 소유권을 계속 분리 |
@@ -73,6 +73,12 @@
 Gemmini의 패킹된 32비트 로컬 주소는 복사하지 않는다. 현재 AQuA 주소는
 명시적인 영역, 뱅크 및 행만 사용한다. 슬롯은 실제 동시 residency와
 할당 충돌 검증이 구현될 때만 다시 도입한다.
+
+`AquaLoopMatmul`은 Gemmini `LoopMatmul`의 명령 인코딩이나 two-context
+overlap을 복사하지 않는다. `MatmulScheduler`와 `WorkScheduler`가 만든
+좌표를 소비하고, work-level load/execute/store protocol만 직렬화한다.
+현재 execute completion은 testbench executor가 제공하며 production
+arithmetic datapath는 아니다.
 
 로드 경계는 네 개의 독립적인 activation, weight, block-scale, row-shift
 read port다. `LoadController`가 유일한 활성 `ProviderLoadWork`와 채널별
@@ -108,8 +114,8 @@ AQuA는 활성화, 가중치, HP1 메타데이터, 누산기 및 전체 논리 K
 | 질문 | 소유자 |
 |---|---|
 | 누가 타일 팩터를 선택하는가? | Rust 호스트/런타임 `AquaTileSelector` |
-| 누가 현재 BSV 매크로 N을 순회하는가? | RTL `MatmulScheduler` |
-| 누가 매크로 M/K 및 컨텍스트를 순회하는가? | 아직 없음; 향후 RTL `AquaLoopMatmul` |
+| 누가 현재 BSV 스트라이프/매크로 N/K/I/J를 순회하는가? | RTL `MatmulScheduler` |
+| 누가 단일 active context lifecycle을 조정하는가? | RTL `AquaLoopMatmul` |
 | 누가 K 프래그먼트를 선택하는가? | RTL `WorkScheduler` |
 | 누가 ExSIA 스트라이프 행을 결정하는가? | 타일-I 팩터에서 파생되어 ExSIA 전에 `ActivationExecutionPlan`에 고정되는 `AquaTilePlan` |
 | 누가 현재 로컬 base/destination을 제공하는가? | `ProviderLoadWork`/`StoreWork`를 만드는 상위 계층 |
@@ -120,12 +126,13 @@ AQuA는 활성화, 가중치, HP1 메타데이터, 누산기 및 전체 논리 K
 순회 권한은 서로 겹치지 않는다.
 
 - Rust `AquaTileSelector`는 매크로 M/N/K 후보와 용량을 선택한다.
-- `MatmulScheduler`는 스트라이프와 매크로 N을 DIM 경계 내 배열 작업으로
-  확장하며, J가 가장 안쪽이고 I가 그 다음이다.
-- 현재 `ArrayWork`는 전체 논리 K를 전달한다. `WorkScheduler`는 HP1
-  블록을 넘지 않도록 그 범위를 프래그먼트로 나눈다.
-- 향후 `AquaLoopMatmul`이 실제 매크로 K 범위, 슬롯, 컨텍스트 승격을
-  함께 구현하기 전에는 해당 필드나 상태를 BSV 계약에 추가하지 않는다.
+- `MatmulScheduler`는 스트라이프와 매크로 N/K를 DIM 경계 내 배열 작업으로
+  확장하며 J, I, 매크로 K, 매크로 N 순서로 진행한다.
+- `WorkScheduler`는 현재 `ArrayWork`의 매크로 K 범위를 HP1 블록을 넘지
+  않는 프래그먼트로 나눈다.
+- `AquaLoopMatmul`은 프래그먼트별 load/execute completion과 final 매크로 K
+  store acknowledgement를 조정한다.
+- 슬롯, resident tile reuse와 two-context 승격은 아직 BSV 계약에 없다.
 
 ## 명시적인 비목표
 

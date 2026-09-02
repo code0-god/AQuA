@@ -66,9 +66,10 @@ k_fragment_count =
     min(array_dim, remaining_logical_k, remaining_in_block)
 ```
 
-Rust 타일 계획의 `k_tile_elements`는 32를 초과할 수 있다. 그러나 현재
-BSV에는 매크로 K 식별자나 순회 상태가 없다. `MatmulScheduler`가 만든
-`ArrayWork`는 전체 논리 K 범위를 전달하고, `WorkScheduler`는 그 범위를
+Rust 타일 계획의 `k_tile_elements`는 BSV descriptor의
+`macroKTileElements`와 같은 concrete extent 의미를 가진다.
+`MatmulScheduler`는 마지막 edge를 logical K에 맞춰 줄인
+`ArrayWork.kTileStart/kTileCount`를 만들고, `WorkScheduler`는 각 범위를
 블록 경계로 제한된 프래그먼트로 분해한다.
 
 ## 계층 구조
@@ -80,13 +81,13 @@ BSV에는 매크로 K 식별자나 순회 상태가 없다. `MatmulScheduler`가
 매크로 N/J 타일
 └── 하나 이상의 array_dim 너비 배열 작업
 
-현재 BSV의 전체 논리 K 범위
+현재 BSV의 매크로 K 범위
 └── 하나 이상의 HP1 블록
     └── 하나 이상의 배열 차원 제한 K 프래그먼트
 ```
 
-Rust는 계속 매크로 K 후보를 선택하고 용량을 계산한다. 이를 실제 BSV
-순회 계약으로 연결하는 작업은 `AquaLoopMatmul` 구현과 함께 연기되어 있다.
+Rust가 선택한 concrete K extent는 BSV scheduler 실행 경계까지 연결된다.
+현재 연결은 제어 범위이며 전체 매크로 K 데이터 residency를 의미하지 않는다.
 
 ## 리소스 인식 호스트 계획
 
@@ -180,10 +181,10 @@ LUT/DSP 사용량, timing/Fmax 및 post-synthesis area는 아직 측정하지 �
 
 | 메모리 | 의미 | 수명 |
 |---|---|---|
-| `Scratchpad` 활성값 인스턴스 | 클리핑된 활성값 Q 값 | 현재 예약된 로드/실행 범위 |
-| `Scratchpad` 가중치 인스턴스 | HP1 코드 행 | 현재 예약된 J/K 프래그먼트 |
-| `Hp1MetaMem` | 블록 왼쪽 시프트 및 행 스케일 메타데이터 | 해당 J/K 타일 동안 |
-| `AccumulatorMem` | 향후 조밀 및 RaCo 기여값 | 출력 타일이 완료될 때까지 |
+| `Scratchpad` 활성값 인스턴스 | 클리핑된 활성값 Q 값 | 현재 K 프래그먼트 load부터 execute completion까지 |
+| `Scratchpad` 가중치 인스턴스 | HP1 코드 행 | 현재 K 프래그먼트 load부터 execute completion까지 |
+| `Hp1MetaMem` | 블록 왼쪽 시프트 및 행 스케일 메타데이터 | 현재 K 프래그먼트 실행 동안 |
+| `AccumulatorMem` | 조밀 및 향후 RaCo 기여값 | final 매크로 K output acknowledgement까지 |
 
 `ExsiaStripeMem`과 잔차 패킷 메모리는 아직 프로덕션 BSV 트리에 없다.
 Rust의 ExSIA 용량 계산은 유지되지만 BSV 로컬 슬롯 계약을 의미하지 않는다.
@@ -215,9 +216,10 @@ base 주소에 더하고, 각 메모리의 독립적인 bank count로 선형 주
 `bank,row`에 매핑한다. HP1 메타데이터와 누산기는 별도 region과 destination을
 사용한다. 프로바이더는 로컬 목적지를 선택하거나 다시 작성하지 않는다.
 
-현재 주소에는 슬롯이 없고 이중 버퍼 residency를 주장하지 않는다. 실제로
-두 컨텍스트가 동시에 서로 다른 로컬 범위를 점유하고, 할당 충돌과 승격을
-검증하는 `AquaLoopMatmul`이 구현될 때만 슬롯 식별자를 다시 도입한다.
+현재 주소에는 슬롯이 없고 이중 버퍼 residency를 주장하지 않는다.
+`AquaLoopMatmul`은 activation, weight, block metadata, row metadata의 고정
+staging 주소를 한 프래그먼트씩 재사용한다. 두 컨텍스트가 실제로 서로 다른
+로컬 범위를 점유하고 할당 충돌과 승격을 검증할 때만 슬롯 식별자를 도입한다.
 
 ## 스크래치패드 동작
 
@@ -294,32 +296,32 @@ block-scale과 row-shift 응답은 각각 J 열별 payload 벡터와 마스크�
 내보낸다. 완료하려면 출력 승인이 필요하다. 행 오른쪽 시프트 산술은 향후
 단계로 남는다.
 
-## 연기된 매크로 K 및 중첩 실행
+## 매크로 K 제어와 연기된 residency
 
-Gemmini의 루프 컨텍스트는 향후 `AquaLoopMatmul`의 필요성을 제시한다.
+`AquaLoopMatmul`은 하나의 active `ArrayWork`와 K 프래그먼트 lifecycle을
+직렬화한다.
 
 ```text
-현재 컨텍스트: 실행 및 저장
-다음 컨텍스트: 로드 및 준비
+fragment load
+→ exact LoadCompletion
+→ execute protocol
+→ exact ExecuteCompletion
+→ 다음 fragment 또는 work retirement
+→ final 매크로 K에서만 store
+→ output acknowledgement 뒤 retirement
 ```
 
-현재 기반은 로드, 스케줄, 저장 컨트롤러를 분리하지만 슬롯, 컨텍스트
-승격, 동시 이중 버퍼 실행 또는 매크로 K 순회를 표현하지 않는다.
-production tiled execution의 다음 단계는 `AquaLoopMatmul`이 Rust
-`k_tile_elements`를 실제 `ArrayWork.kTileStart/kTileCount` 범위로 만드는
-것이다. 이후 WS SystolicArray/PE 실행을 이 범위와 통합한다.
-
-작은 WS arithmetic unit bring-up은 현재 full-logical-K →
-`WorkScheduler` fragment 경로를 임시로 사용할 수 있다. 이는 arithmetic
-unit test 경로이며 production macro-K architecture를 대체하지 않는다.
-두 로컬 residency, 할당 충돌, 완료 기반 승격, backpressure와 double-buffer
-overlap은 그 뒤 별도 단계에서 도입한다.
+activation/weight/metadata는 full macro-K tile을 상주시킨 것이 아니라
+프래그먼트마다 고정 staging 영역에 다시 적재한다. execute는 protocol과
+testbench executor만 있으며 production WS SystolicArray/PE arithmetic은
+없다. 두 로컬 residency, activation/weight 재사용, 할당 충돌, DIM64 lane
+slicing과 double-buffer overlap은 별도 단계에서 도입한다.
 
 순회 계층은 서로 분리된 상태로 유지된다.
 
 ```text
 Rust AquaTileSelector: 매크로 M/N/K 후보 선택과 용량 검사
-MatmulScheduler: 스트라이프와 매크로 N 내부의 J 우선 I 배열 작업
-WorkScheduler: 현재 전체 논리 K 범위의 블록 경계 제한 프래그먼트
-향후 AquaLoopMatmul: 매크로 K 순회, 슬롯 할당, 컨텍스트 승격
+MatmulScheduler: 스트라이프/매크로 N/매크로 K/I/J 좌표
+WorkScheduler: 현재 매크로 K 범위의 블록 경계 제한 프래그먼트
+AquaLoopMatmul: 단일-context load/execute/final-store 완료 조정
 ```

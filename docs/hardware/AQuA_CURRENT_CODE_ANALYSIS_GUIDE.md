@@ -100,19 +100,21 @@ BSV
 ├─ wide checked AccumulatorMem
 ├─ MatmulScheduler
 ├─ WorkScheduler
+├─ J → I → macro-K → macro-N traversal
 ├─ block-size-32 K fragment scheduling
+├─ single-context AquaLoopMatmul
+├─ ExecuteWork / ExecuteCompletion protocol
 ├─ tagged provider requests
 ├─ load response staging
 ├─ metadata reuse
 ├─ StoreController
-└─ acknowledgement-gated store completion
+├─ final-macro-K-only store
+└─ acknowledgement-gated ArrayWork retirement
 ```
 
 아직 없는 것:
 
 ```text
-AquaLoopMatmul
-physical macro-K traversal
 ExecuteController
 PE preload/reorder
 WS SystolicArray
@@ -121,6 +123,8 @@ BlockLeftShiftUnit
 RowRightShiftUnit
 BSV ExSIA
 BSV RaCo
+resident macro-tile preload
+activation / weight reuse
 double-buffer execution overlap
 physical DMA
 AXI / PCIe / DDR adapter
@@ -231,6 +235,7 @@ jCount <= DIM
 ```
 
 하나의 macro M/N 범위는 여러 `ArrayWork`로 나뉠 수 있다.
+각 work는 현재 stripe/macro-N 경계와 실제 매크로 K 범위도 보존한다.
 
 예:
 
@@ -253,7 +258,7 @@ I 32,     J 0..15
 I 32,     J 16..19
 ```
 
-현재 scheduler는 **J-before-I traversal**을 사용한다.
+현재 scheduler는 **J → I → macro K → macro N traversal**을 사용한다.
 
 ---
 
@@ -307,7 +312,9 @@ K 0..31
 K 32..63
 ```
 
-DIM이 64여도 HP1 scale boundary 때문에 32에서 한 번 끊긴다.
+현재 DIM64 loop test는 `macroKTileElements=32`인 두 매크로 K work를 각각
+lane 0부터 독립적으로 load/execute한다. 이는 full DIM-wide resident tile의
+lane slicing이 아니다.
 
 ---
 
@@ -407,11 +414,14 @@ llama.cpp-gemmini tiling policy
 tile factor 선택:
     Rust AquaTileSelector
 
-현재 macro N / J-I traversal:
+현재 stripe / macro N / macro K / J-I traversal:
     RTL MatmulScheduler
 
-현재 full logical K fragment:
+현재 macro K fragment:
     RTL WorkScheduler
+
+현재 single-context lifecycle:
+    RTL AquaLoopMatmul
 
 ExSIA stripe:
     AquaTilePlan
@@ -419,8 +429,8 @@ ExSIA stripe:
 local base/destination:
     상위 ProviderLoadWork / StoreWork
 
-slot, macro-K, context promotion:
-    향후 AquaLoopMatmul
+slot, resident reuse, two-context promotion:
+    향후 tile-residency 단계
 
 external memory / physical DMA:
     향후 typed read/write port adapter
@@ -943,7 +953,7 @@ resource usage
 
 # 9. 6차 독해 — 현재 BSV 프로덕션 트리
 
-`hw/bsv/Makefile`의 프로덕션 목록은 정확히 13개다.
+`hw/bsv/Makefile`의 프로덕션 목록은 정확히 14개다.
 
 ```text
 hw/bsv/src/
@@ -955,7 +965,8 @@ hw/bsv/src/
 │   ├── MatmulScheduler.bsv
 │   ├── WorkScheduler.bsv
 │   ├── LoadController.bsv
-│   └── StoreController.bsv
+│   ├── StoreController.bsv
+│   └── AquaLoopMatmul.bsv
 └── memory/
     ├── AquaLocalAddr.bsv
     ├── Scratchpad.bsv
@@ -988,11 +999,15 @@ ActivationStripe
 ArrayWork
     ↓
 KFragment
+    ↓
+ExecuteWork / ExecuteCompletion
 ```
 
 `ArrayCount`는 지원 DIM 16/32/64와 부분 edge를 표현한다.
-`AquaMatmulDescriptor`는 `macroNTileColumns`를 사용하지만 매크로 타일 ID나
-매크로 K 필드는 없다. 현재 `ArrayWork`의 K 범위는 `0..descriptor.k`다.
+`AquaMatmulDescriptor`의 `macroKTileElements`는 Rust
+`AquaTilePlan.k_tile_elements()`와 같은 concrete extent 의미를 가진다.
+`ArrayWork`는 stripe/macro-N 경계와 현재 매크로 K의 실제
+`kTileStart/kTileCount`를 보존한다.
 
 `AquaLocalAddr`도 세 필드만 가진다.
 
@@ -1014,7 +1029,7 @@ slot field는 없다. 다음이 모두 구현될 때만 다시 도입한다.
 private 진행 상태는 하나다.
 
 ```text
-WorkPosition { macroNStart, iStart, jStart }
+WorkPosition { macroNStart, macroKStart, iStart, jStart }
 ```
 
 순수 `nextWorkPosition`은 다음 순서를 보존한다.
@@ -1022,7 +1037,8 @@ WorkPosition { macroNStart, iStart, jStart }
 ```text
 같은 macro N에서 J 진행
 → J 종료 후 I 진행, J reset
-→ I 종료 후 다음 macro N, I/J reset
+→ I 종료 후 다음 macro K, I/J reset
+→ K 종료 후 다음 macro N, K/I/J reset
 → 모든 work 종료
 ```
 
@@ -1037,6 +1053,7 @@ WorkPosition { macroNStart, iStart, jStart }
 
 ```text
 TbMatmulScheduler.bsv
+TbMatmulMacroK.bsv
 TbMatmulStripeGap.bsv
 TbMatmulStripeOverlap.bsv
 TbMatmulStripeOutOfBounds.bsv
@@ -1046,7 +1063,7 @@ TbMatmulStripeOutOfBounds.bsv
 
 # 12. `WorkScheduler.bsv`
 
-현재 full logical K를 다음 식으로 분할한다.
+현재 `ArrayWork`의 매크로 K 범위를 다음 식으로 분할한다.
 
 ```text
 fragment_count = min(array_dim, remaining_k, remaining_in_32_wide_block)
@@ -1058,9 +1075,28 @@ K range overflow는 diagnostic assertion과 별도로 state 설치 조건에서
 검사한다. assertions-disabled RTL safety test는 overflow work가 scheduler
 state에 들어가지 않는지 확인한다.
 
-Rust는 매크로 K 후보와 용량을 계산하지만 BSV 매크로 K traversal은 아직
-없다. 향후 `AquaLoopMatmul`이 실제 K 범위를 만들고 `ArrayWork`에 전달할
-때만 해당 상태를 도입한다.
+Rust가 선택한 concrete K extent는 descriptor와 `MatmulScheduler`를 통해
+`ArrayWork`에 전달된다. `WorkScheduler`는 이 범위를 다시 계산하지 않는다.
+
+## 12.1 `AquaLoopMatmul.bsv`
+
+`AquaLoopMatmul`은 `MatmulScheduler`와 `WorkScheduler`를 내부에 두는
+single-context lifecycle coordinator다. 좌표를 독립적으로 계산하지 않고
+현재 work/fragment가 만든 identity를 load, execute, store protocol에
+부여한다.
+
+```text
+load offer → exact LoadCompletion
+→ execute offer → exact ExecuteCompletion
+→ 다음 fragment
+→ final 매크로 K에서만 store
+→ exact StoreCompletion 뒤 ArrayWork retirement
+```
+
+activation/weight/metadata는 고정 staging 주소를 프래그먼트마다 재사용한다.
+누산기 주소는 stripe/macro-N 상대 I/J group으로 계산되어 같은 output work가
+서로 다른 매크로 K에서도 같은 cell을 사용한다. execute는 protocol과
+testbench executor만 있으며 production PE/WS arithmetic은 없다.
 
 ---
 
@@ -1194,6 +1230,11 @@ request consumption만으로 완료하지 않는다. 정확한 acknowledgement �
 `AquaMemorySubsystem` 연결:
 
 ```text
+AquaLoopMatmul
+    ├── ProviderLoadWork ────────────────┐
+    ├── ExecuteWork / completion         │ testbench/future executor
+    └── final-K StoreWork ───────────┐   │
+                                    ↓   ↓
 LoadController requests ─────────────→ four typed read ports
 LoadController pending tags
                                       provider responses
@@ -1213,8 +1254,9 @@ AccumulatorMem → StoreController → typed output request / ack
 - ExecuteController;
 - BSV ExSIA와 RaCo datapath;
 - HP1 integer/left-shift/right-shift unit;
-- `AquaLoopMatmul` 매크로 M/K traversal;
+- resident macro-tile preload와 activation/weight reuse;
 - slot allocation과 double-buffer overlap;
+- DIM64 resident tile lane slicing;
 - physical DMA, TileLink, AXI, PCIe, DDR adapter;
 - accelerator-resident intermediate tensor.
 
@@ -1228,7 +1270,7 @@ future contract 재도입 조건은 항상 같다.
 
 # 19. 테스트와 검증
 
-positive simulation top 11개:
+positive simulation top 19개:
 
 ```text
 mkTbHardwareContracts
@@ -1236,23 +1278,37 @@ mkTbHp1MetaMem
 mkTbLocalAddr
 mkTbScratchpadBank
 mkTbAccumulatorMem
+mkTbAccumulatorBankGeometry
 mkTbWorkScheduler
 mkTbMatmulScheduler
+mkTbMatmulMacroK
+mkTbAquaLoopMatmul
+mkTbAquaLoopMatmulDim32
+mkTbAquaLoopMatmulDim64
+mkTbAquaLoopMatmulAsync
+mkTbAquaLoopAccumulatorMapping
 mkTbMockAquaProvider
 mkTbLoadController
 mkTbStoreController
 mkTbAquaMemorySubsystem
+mkTbLoopMatmulMemoryIntegration
 ```
 
-expected-failure top 13개:
+expected-failure top 19개:
 
 ```text
 mkTbAccumulatorOverflow
+mkTbInvalidAccumulatorBankGeometry
 mkTbMatmulStripeGap
 mkTbMatmulStripeOverlap
 mkTbMatmulStripeOutOfBounds
 mkTbMatmulInvalidDescriptor
+mkTbMatmulInvalidMacroKZero
+mkTbMatmulInvalidMacroKLarge
 mkTbMatmulWrongStripeId
+mkTbLoopWrongLoadCompletion
+mkTbLoopWrongExecuteCompletion
+mkTbLoopWrongStoreCompletion
 mkTbHp1BlockDepthOverflow
 mkTbHp1RowDepthOverflow
 mkTbActivationLoadDepthOverflow
@@ -1262,7 +1318,7 @@ mkTbWeightResponseMaskMismatch
 mkTbMetadataResponseMaskMismatch
 ```
 
-assertions-disabled RTL safety top 5개:
+assertions-disabled RTL safety top 6개:
 
 ```text
 mkTbLoadInvalidWorkGate
@@ -1270,14 +1326,16 @@ mkTbStoreInvalidWorkGate
 mkTbAccumulatorOverflowGate
 mkTbWorkRangeOverflowGate
 mkTbMatmulInvalidInputGate
+mkTbLoopInvalidCompletionGate
 ```
 
-BSC RTL generation top 3개:
+BSC RTL generation top 4개:
 
 ```text
 mkMemorySynthTop
 mkSchedulerSynthTop
 mkMemorySubsystemSynthTop
+mkLoopMatmulSynthTop
 ```
 
 이 top들은 BSC Verilog 생성까지 검증한다. BRAM inference, LUT/DSP 사용량,
@@ -1286,16 +1344,19 @@ timing/Fmax 및 post-synthesis area를 포함하는 물리 FPGA synthesis는 아
 
 ```bash
 make -C hw/bsv bsv-test-one TOP=mkTbMatmulScheduler
+make -C hw/bsv bsv-test-one TOP=mkTbAquaLoopMatmul
+make -C hw/bsv bsv-test-one TOP=mkTbLoopMatmulMemoryIntegration
 make -C hw/bsv bsv-test-one TOP=mkTbLoadController
 make -C hw/bsv bsv-test-one TOP=mkTbAquaMemorySubsystem
 make -C hw/bsv bsv-test-no-assert
 make -C hw/bsv verify
 ```
 
-검증할 핵심은 J-before-I, macro-N transition, partial edge, block-bounded K,
-lookahead, consume 전 response rejection, delayed exact response, wrong-tag 차단,
-channel independence, metadata reuse/vector 보존, masked write, checked overflow,
-ack-gated completion이다.
+검증할 핵심은 J-before-I-before-macro-K-before-macro-N, partial edge,
+block-bounded K, fragment-local DIM16/32/64 실행, exact completion matching,
+final-K-only store, output ack retirement, async stripe lifecycle, consume 전
+response rejection, delayed exact response, wrong-tag 차단, channel independence,
+metadata reuse/vector 보존, masked write와 checked overflow다.
 
 ---
 
@@ -1306,6 +1367,7 @@ README / hardware docs
 → Rust hardware geometry와 tiler
 → AquaTypes / AquaWorkTypes
 → MatmulScheduler / WorkScheduler
+→ AquaLoopMatmul
 → AquaMemoryProtocol / AquaLocalAddr
 → LoadController / LoadStager
 → Scratchpad / Hp1MetaMem / AccumulatorMem
@@ -1319,15 +1381,17 @@ README / hardware docs
 
 # 21. 이해 체크리스트
 
-- [ ] `WorkPosition`과 J → I → macro N 순서를 설명할 수 있는가?
-- [ ] 현재 full logical K와 future macro-K를 구분할 수 있는가?
+- [ ] `WorkPosition`과 J → I → macro K → macro N 순서를 설명할 수 있는가?
+- [ ] Rust `k_tile_elements`와 BSV `macroKTileElements`의 같은 의미를 설명할 수 있는가?
+- [ ] 매크로 K와 fragment-local staging/residency를 구분할 수 있는가?
+- [ ] load/execute/store completion identity와 final-K retirement를 설명할 수 있는가?
 - [ ] 네 typed port, offered/pending, next-cycle response를 설명할 수 있는가?
 - [ ] channel별 single-outstanding과 채널 간 독립성을 설명할 수 있는가?
 - [ ] metadata reuse key와 J별 vector mask를 설명할 수 있는가?
 - [ ] `ZeroBlock`과 비활성 lane 보존을 설명할 수 있는가?
 - [ ] activation/weight/accumulator geometry 분리를 설명할 수 있는가?
 - [ ] 왜 store completion이 acknowledgement를 기다리는가?
-- [ ] slot, double buffering, macro-K, arithmetic, DMA가 아직 없음을 아는가?
+- [ ] slot, double buffering, resident tile reuse, arithmetic, DMA가 아직 없음을 아는가?
 
 ---
 
@@ -1340,18 +1404,20 @@ AquaTilePlan / ActivationExecutionPlan
                 ↓
 BSV AquaMatmulDescriptor
                 ↓
-MatmulScheduler ── ArrayWork: J → I → macro N, full logical K
+MatmulScheduler ── ArrayWork: J → I → macro K → macro N
                 ↓
 WorkScheduler ─── block-bounded KFragment
                 ↓
-LoadController ── four typed single-outstanding ports
+AquaLoopMatmul ── load → execute protocol → final-K store
+                ↓
+LoadController ─ four typed single-outstanding ports
                 ↓ provider, next-cycle-or-later response
 LoadStager ────── activation/weight Scratchpad + Hp1MetaMem vectors
 
-[arithmetic / PE / WS array / ExSIA / RaCo: deferred]
+[fragment-local staging; arithmetic / PE / WS array / ExSIA / RaCo: deferred]
 
 AccumulatorMem → StoreController → output request / acknowledgement
 ```
 
-현재 단순화의 핵심은 구현되지 않은 다음 단계의 상태를 먼저 계약으로 만들지
-않는 것이다.
+현재 단순화의 핵심은 매크로 K 제어를 resident tile reuse나 실제 arithmetic
+완료로 과장하지 않는 것이다.
