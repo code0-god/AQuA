@@ -231,7 +231,6 @@ module mkAquaLoopMatmul(AquaLoopMatmulIfc#(arrayDim));
 
     rule beginArrayWork(
         phase == LoopWaitArrayWork
-        && !matmul.completionValid
         && matmul.workValid
         && fragments.startReady
     );

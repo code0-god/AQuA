@@ -1270,7 +1270,7 @@ future contract 재도입 조건은 항상 같다.
 
 # 19. 테스트와 검증
 
-positive simulation top 19개:
+positive simulation top 20개:
 
 ```text
 mkTbHardwareContracts
@@ -1286,6 +1286,7 @@ mkTbAquaLoopMatmul
 mkTbAquaLoopMatmulDim32
 mkTbAquaLoopMatmulDim64
 mkTbAquaLoopMatmulAsync
+mkTbAquaLoopMatmulCompletionDecoupling
 mkTbAquaLoopAccumulatorMapping
 mkTbMockAquaProvider
 mkTbLoadController

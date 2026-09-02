@@ -40,6 +40,7 @@ BSV_TEST_TOPS := \
 	mkTbAquaLoopMatmulDim32 \
 	mkTbAquaLoopMatmulDim64 \
 	mkTbAquaLoopMatmulAsync \
+	mkTbAquaLoopMatmulCompletionDecoupling \
 	mkTbAquaLoopAccumulatorMapping \
 	mkTbMockAquaProvider \
 	mkTbLoadController \

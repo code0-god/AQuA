@@ -311,6 +311,11 @@ fragment load
 → output acknowledgement 뒤 retirement
 ```
 
+`StripeCompletion`은 연속 stripe 사이의 실행 barrier가 아니라 notification
+channel이다. publish된 lookahead stripe가 promote되면 이전 completion이
+queued 상태여도 다음 stripe를 실행하며, FIFO capacity가 소진될 때만
+`MatmulScheduler` retirement guard가 자연스럽게 backpressure한다.
+
 activation/weight/metadata는 full macro-K tile을 상주시킨 것이 아니라
 프래그먼트마다 고정 staging 영역에 다시 적재한다. execute는 protocol과
 testbench executor만 있으며 production WS SystolicArray/PE arithmetic은
