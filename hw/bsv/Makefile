@@ -44,7 +44,8 @@ BSV_TEST_TOPS := \
 	mkTbMockAquaProvider \
 	mkTbLoadController \
 	mkTbStoreController \
-	mkTbAquaMemorySubsystem
+	mkTbAquaMemorySubsystem \
+	mkTbLoopMatmulMemoryIntegration
 
 BSV_EXPECT_FAIL_TOPS := \
 	mkTbAccumulatorOverflow \
