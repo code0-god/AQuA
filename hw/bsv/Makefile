@@ -30,6 +30,7 @@ BSV_TEST_TOPS := \
 	mkTbHardwareContracts \
 	mkTbHp1MetaMem \
 	mkTbLocalAddr \
+	mkTbMemoryDepth \
 	mkTbScratchpadBank \
 	mkTbAccumulatorMem \
 	mkTbAccumulatorBankGeometry \
@@ -227,7 +228,7 @@ verify-test-harness: | $(BUILD_DIR)/test-logs
 	$(MAKE) bsv-test-expected-one TOP=mkTbAccumulatorOverflow; \
 	echo "PASS: verify-test-harness"
 
-.PHONY: rtl
+.PHONY: rtl verify-memory-depth
 
 rtl:
 	@set -euo pipefail; \
@@ -235,7 +236,28 @@ rtl:
 	  $(MAKE) rtl-one TOP="$$top"; \
 	done
 
-verify: check bsv-test bsv-test-no-assert verify-test-harness rtl
+verify-memory-depth: rtl | $(BUILD_DIR)/sim $(BUILD_DIR)/test-logs
+	@python3 scripts/audit-memory.py \
+	  $(BUILD_DIR)/rtl/MemorySynthTop/mkMemorySynthTop.v \
+	  $(BUILD_DIR)/rtl/MemorySubsystemSynthTop/mkMemorySubsystemSynthTop.v
+	@set -euo pipefail; \
+	for spec in \
+	  'mkScratchpadZeroDepth:scratchpad rows must be positive' \
+	  'mkHp1BlockZeroDepth:HP1 block entries must be positive' \
+	  'mkHp1RowZeroDepth:HP1 row entries must be positive' \
+	  'mkAccumulatorZeroDepth:accumulator rows must be positive'; do \
+	  top="$${spec%%:*}"; expected="$${spec#*:}"; \
+	  log="$(BUILD_DIR)/test-logs/$$top.log"; \
+	  if $(BSC) -u -sim $(BSC_COMMON) -g "$$top" \
+	      tb/MemoryDepthElaboration.bsv >"$$log" 2>&1; then \
+	    echo "$$top unexpectedly elaborated" >&2; exit 1; \
+	  fi; \
+	  cat "$$log"; \
+	  tr -s '[:space:]' ' ' <"$$log" | grep -Fq "Static assertion failed: $$expected"; \
+	  echo "PASS expected elaboration failure $$top"; \
+	done
+
+verify: check bsv-test bsv-test-no-assert verify-test-harness verify-memory-depth
 
 $(BUILD_DIR)/bsc $(BUILD_DIR)/sim $(BUILD_DIR)/info $(BUILD_DIR)/bin $(BUILD_DIR)/test-logs:
 	@mkdir -p "$@"

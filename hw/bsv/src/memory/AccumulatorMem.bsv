@@ -72,10 +72,11 @@ interface AccumulatorMemIfc#(
 endinterface
 
 module mkAccumulatorMem(AccumulatorMemIfc#(banks, rows, accWidth));
+    staticAssert(valueOf(rows) > 0, "accumulator rows must be positive");
     Vector#(
         banks,
         RegFile#(AccumulatorRow#(rows), Int#(accWidth))
-    ) memories <- replicateM(mkRegFileFull);
+    ) memories <- replicateM(mkRegFile(0, fromInteger(valueOf(rows) - 1)));
     FIFOF#(
         AccumulatorReadReq#(banks, rows)
     ) readRequests <- mkPipelineFIFOF;

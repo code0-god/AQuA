@@ -31,10 +31,11 @@ endinterface
 module mkScratchpadBank(ScratchpadBankIfc#(rows, lanes, element_t))
     provisos (Bits#(element_t, elementWidth));
 
+    staticAssert(valueOf(rows) > 0, "scratchpad rows must be positive");
     Vector#(
         lanes,
         RegFile#(ScratchpadRowAddr#(rows), element_t)
-    ) laneMemories <- replicateM(mkRegFileFull);
+    ) laneMemories <- replicateM(mkRegFile(0, fromInteger(valueOf(rows) - 1)));
     // mkPipelineFIFOF is a one-entry FIFO with concurrent deq/enq support.
     FIFOF#(ScratchpadRowAddr#(rows)) readRequests <- mkPipelineFIFOF;
     FIFOF#(Vector#(lanes, element_t)) readResponses <- mkPipelineFIFOF;

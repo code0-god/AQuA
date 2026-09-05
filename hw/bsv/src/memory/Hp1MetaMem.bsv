@@ -44,17 +44,19 @@ module mkHp1MetaMem(Hp1MetaMemIfc#(
     blockShiftWidth,
     rowShiftWidth
 ));
+    staticAssert(valueOf(blockEntries) > 0, "HP1 block entries must be positive");
+    staticAssert(valueOf(rowEntries) > 0, "HP1 row entries must be positive");
     Vector#(
         lanes,
         RegFile#(
             Hp1BlockMetaAddr#(blockEntries),
             Hp1BlockScale#(blockShiftWidth)
         )
-    ) blockScales <- replicateM(mkRegFileFull);
+    ) blockScales <- replicateM(mkRegFile(0, fromInteger(valueOf(blockEntries) - 1)));
     Vector#(
         lanes,
         RegFile#(Hp1RowMetaAddr#(rowEntries), UInt#(rowShiftWidth))
-    ) rowShifts <- replicateM(mkRegFileFull);
+    ) rowShifts <- replicateM(mkRegFile(0, fromInteger(valueOf(rowEntries) - 1)));
 
     method Action writeBlockScales(
         Hp1BlockMetaAddr#(blockEntries) address,
