@@ -126,8 +126,8 @@ module mkStoreController#(
     AccumulatorMemIfc#(bankCount, rowCount, accWidth) accumulator
 )(StoreControllerIfc#(arrayDim, bankCount, rowCount, accWidth))
     provisos (
-        Add#(bankAddrPadding, TLog#(TAdd#(bankCount, 1)), 8),
-        Add#(rowAddrPadding, TLog#(TAdd#(rowCount, 1)), 16)
+        Add#(bankAddrPadding, MemoryAddrWidth#(bankCount), 8),
+        Add#(rowAddrPadding, MemoryAddrWidth#(rowCount), 16)
     );
 
     staticAssert(

@@ -31,6 +31,7 @@ BSV_TEST_TOPS := \
 	mkTbHp1MetaMem \
 	mkTbLocalAddr \
 	mkTbMemoryDepth \
+	mkTbMemoryAddressWidth \
 	mkTbScratchpadBank \
 	mkTbAccumulatorMem \
 	mkTbAccumulatorBankGeometry \
@@ -82,7 +83,8 @@ SYNTH_TOPS := \
 	mkMemorySynthTop \
 	mkSchedulerSynthTop \
 	mkMemorySubsystemSynthTop \
-	mkLoopMatmulSynthTop
+	mkLoopMatmulSynthTop \
+	mkMemoryMaxDepthSynthTop
 
 .PHONY: check bsv-test bsv-test-one bsv-test-no-assert \
 	bsv-test-no-assert-one rtl-one verify clean
@@ -228,7 +230,7 @@ verify-test-harness: | $(BUILD_DIR)/test-logs
 	$(MAKE) bsv-test-expected-one TOP=mkTbAccumulatorOverflow; \
 	echo "PASS: verify-test-harness"
 
-.PHONY: rtl verify-memory-depth
+.PHONY: rtl verify-memory-depth verify-address-width
 
 rtl:
 	@set -euo pipefail; \
@@ -257,7 +259,11 @@ verify-memory-depth: rtl | $(BUILD_DIR)/sim $(BUILD_DIR)/test-logs
 	  echo "PASS expected elaboration failure $$top"; \
 	done
 
-verify: check bsv-test bsv-test-no-assert verify-test-harness verify-memory-depth
+verify-address-width: rtl
+	@python3 scripts/audit-memory.py \
+	  $(BUILD_DIR)/rtl/MemoryMaxDepthSynthTop/mkMemoryMaxDepthSynthTop.v
+
+verify: check bsv-test bsv-test-no-assert verify-test-harness verify-memory-depth verify-address-width
 
 $(BUILD_DIR)/bsc $(BUILD_DIR)/sim $(BUILD_DIR)/info $(BUILD_DIR)/bin $(BUILD_DIR)/test-logs:
 	@mkdir -p "$@"

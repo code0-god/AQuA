@@ -1,5 +1,8 @@
 package AquaLocalAddr;
 
+// Keep a concrete address bit even for a single entry.
+typedef TMax#(1, TLog#(depth)) MemoryAddrWidth#(numeric type depth);
+
 typedef enum {
     LocalActivation,
     LocalWeight,

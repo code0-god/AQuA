@@ -11,6 +11,7 @@ MEMORIES: Final[dict[str, tuple[tuple[str, int, int], ...]]] = {
         ("scratchpad_laneMemories_", 8, 4),
         ("accumulator_memories_", 8, 2),
     ),
+    "mkMemoryMaxDepthSynthTop": (("accumulator_memories_", 65536, 16),),
     "mkMemorySubsystemSynthTop": (
         ("subsystem_staging_activations_bankVector_", 16, 32),
         ("subsystem_staging_weights_bankVector_", 32, 64),
@@ -52,6 +53,12 @@ def audit_memory(path: Path) -> None:
                 raise SystemExit(
                     f"{path}: {name}: expected range 0..{depth - 1}, "
                     f"got {values.get('lo')}..{values.get('hi')}"
+                )
+            width = max(1, (depth - 1).bit_length())
+            if values.get("addr_width") != width:
+                raise SystemExit(
+                    f"{path}: {name}: expected address width {width}, "
+                    f"got {values.get('addr_width')}"
                 )
             checked += 1
         print(f"PASS: {prefix} {count} RegFiles x {depth} entries")

@@ -2,6 +2,7 @@ package AquaMemorySubsystem;
 
 import Assert::*;
 import AccumulatorMem::*;
+import AquaLocalAddr::*;
 import AquaMemoryProtocol::*;
 import AquaTypes::*;
 import AquaWorkTypes::*;
@@ -105,14 +106,14 @@ module mkAquaMemorySubsystem(
 ) provisos (
     Add#(activationLanePadding, TLog#(arrayDim), 32),
     Add#(weightLanePadding, TLog#(arrayDim), 32),
-    Add#(accBankPadding, TLog#(TAdd#(accumulatorBanks, 1)), 8),
-    Add#(accRowPadding, TLog#(TAdd#(accumulatorRows, 1)), 16),
+    Add#(accBankPadding, MemoryAddrWidth#(accumulatorBanks), 8),
+    Add#(accRowPadding, MemoryAddrWidth#(accumulatorRows), 16),
     Add#(activationBankPadding, TLog#(activationBanks), 32),
-    Add#(activationRowPadding, TLog#(TAdd#(activationRows, 1)), 32),
+    Add#(activationRowPadding, MemoryAddrWidth#(activationRows), 32),
     Add#(weightBankPadding, TLog#(weightBanks), 32),
-    Add#(weightRowPadding, TLog#(TAdd#(weightRows, 1)), 32),
-    Add#(blockMetaPadding, TLog#(TAdd#(blockMetaEntries, 1)), 32),
-    Add#(rowMetaPadding, TLog#(TAdd#(rowMetaEntries, 1)), 32)
+    Add#(weightRowPadding, MemoryAddrWidth#(weightRows), 32),
+    Add#(blockMetaPadding, MemoryAddrWidth#(blockMetaEntries), 32),
+    Add#(rowMetaPadding, MemoryAddrWidth#(rowMetaEntries), 32)
 );
     staticAssert(
         valueOf(accumulatorBanks) == valueOf(arrayDim),

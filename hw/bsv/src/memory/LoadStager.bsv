@@ -113,11 +113,11 @@ module mkLoadStager#(
     rowShiftWidth
 )) provisos (
     Add#(activationBankPadding, TLog#(activationBanks), 32),
-    Add#(activationRowPadding, TLog#(TAdd#(activationRows, 1)), 32),
+    Add#(activationRowPadding, MemoryAddrWidth#(activationRows), 32),
     Add#(weightBankPadding, TLog#(weightBanks), 32),
-    Add#(weightRowPadding, TLog#(TAdd#(weightRows, 1)), 32),
-    Add#(blockMetaPadding, TLog#(TAdd#(blockMetaEntries, 1)), 32),
-    Add#(rowMetaPadding, TLog#(TAdd#(rowMetaEntries, 1)), 32)
+    Add#(weightRowPadding, MemoryAddrWidth#(weightRows), 32),
+    Add#(blockMetaPadding, MemoryAddrWidth#(blockMetaEntries), 32),
+    Add#(rowMetaPadding, MemoryAddrWidth#(rowMetaEntries), 32)
 );
     BankedScratchpadIfc#(
         activationBanks,

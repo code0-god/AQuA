@@ -1,14 +1,15 @@
 package Hp1MetaMem;
 
 import Assert::*;
+import AquaLocalAddr::*;
 import AquaTypes::*;
 import RegFile::*;
 import Vector::*;
 
-typedef Bit#(TLog#(TAdd#(blockEntries, 1))) Hp1BlockMetaAddr#(
+typedef Bit#(MemoryAddrWidth#(blockEntries)) Hp1BlockMetaAddr#(
     numeric type blockEntries
 );
-typedef Bit#(TLog#(TAdd#(rowEntries, 1))) Hp1RowMetaAddr#(
+typedef Bit#(MemoryAddrWidth#(rowEntries)) Hp1RowMetaAddr#(
     numeric type rowEntries
 );
 
@@ -63,7 +64,7 @@ module mkHp1MetaMem(Hp1MetaMemIfc#(
         Vector#(lanes, Bool) mask,
         Vector#(lanes, Hp1BlockScale#(blockShiftWidth)) scales
     );
-        dynamicAssert(address < fromInteger(valueOf(blockEntries)),
+        dynamicAssert(address <= fromInteger(valueOf(blockEntries) - 1),
                       "HP1 block metadata out of range");
         for (Integer lane = 0; lane < valueOf(lanes); lane = lane + 1) begin
             if (mask[lane]) begin
@@ -75,7 +76,7 @@ module mkHp1MetaMem(Hp1MetaMemIfc#(
     method Vector#(lanes, Hp1BlockScale#(blockShiftWidth)) readBlockScales(
         Hp1BlockMetaAddr#(blockEntries) address
     );
-        if (address >= fromInteger(valueOf(blockEntries))) begin
+        if (address > fromInteger(valueOf(blockEntries) - 1)) begin
             return error("HP1 block metadata out of range");
         end
         else begin
@@ -95,7 +96,7 @@ module mkHp1MetaMem(Hp1MetaMemIfc#(
         Vector#(lanes, Bool) mask,
         Vector#(lanes, UInt#(rowShiftWidth)) shifts
     );
-        dynamicAssert(address < fromInteger(valueOf(rowEntries)),
+        dynamicAssert(address <= fromInteger(valueOf(rowEntries) - 1),
                       "HP1 row metadata out of range");
         for (Integer lane = 0; lane < valueOf(lanes); lane = lane + 1) begin
             if (mask[lane]) begin
@@ -107,7 +108,7 @@ module mkHp1MetaMem(Hp1MetaMemIfc#(
     method Vector#(lanes, UInt#(rowShiftWidth)) readRowShifts(
         Hp1RowMetaAddr#(rowEntries) address
     );
-        if (address >= fromInteger(valueOf(rowEntries))) begin
+        if (address > fromInteger(valueOf(rowEntries) - 1)) begin
             return error("HP1 row metadata out of range");
         end
         else begin

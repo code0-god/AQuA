@@ -6,11 +6,11 @@ import Vector::*;
 
 (* synthesize *)
 module mkTbHp1BlockDepthOverflow(Empty);
-    Hp1MetaMemIfc#(2, 4, 16, 5, 4) dut <- mkHp1MetaMem;
+    Hp1MetaMemIfc#(3, 4, 16, 5, 4) dut <- mkHp1MetaMem;
 
     rule overflow;
         dut.writeBlockScales(
-            2,
+            3,
             replicate(True),
             replicate(Hp1BlockScale { zeroBlock: False, leftShift: 1 })
         );

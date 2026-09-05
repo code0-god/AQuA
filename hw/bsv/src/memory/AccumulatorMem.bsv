@@ -1,13 +1,14 @@
 package AccumulatorMem;
 
 import Assert::*;
+import AquaLocalAddr::*;
 import FIFOF::*;
 import RegFile::*;
 import SpecialFIFOs::*;
 import Vector::*;
 
-typedef Bit#(TLog#(TAdd#(banks, 1))) AccumulatorBank#(numeric type banks);
-typedef Bit#(TLog#(TAdd#(rows, 1))) AccumulatorRow#(numeric type rows);
+typedef Bit#(MemoryAddrWidth#(banks)) AccumulatorBank#(numeric type banks);
+typedef Bit#(MemoryAddrWidth#(rows)) AccumulatorRow#(numeric type rows);
 
 typedef struct {
     AccumulatorBank#(banks) bank;
@@ -138,10 +139,10 @@ module mkAccumulatorMem(AccumulatorMemIfc#(banks, rows, accWidth));
         AccumulatorRow#(rows) row
     ) if (readRequests.notFull && !writeAccepted);
         Bool valid =
-            bank < fromInteger(valueOf(banks))
-            && row < fromInteger(valueOf(rows));
-        dynamicAssert(bank < fromInteger(valueOf(banks)), "accumulator read bank out of range");
-        dynamicAssert(row < fromInteger(valueOf(rows)), "accumulator read row out of range");
+            bank <= fromInteger(valueOf(banks) - 1)
+            && row <= fromInteger(valueOf(rows) - 1);
+        dynamicAssert(bank <= fromInteger(valueOf(banks) - 1), "accumulator read bank out of range");
+        dynamicAssert(row <= fromInteger(valueOf(rows) - 1), "accumulator read row out of range");
         if (valid) begin
             readRequests.enq(AccumulatorReadReq { bank: bank, row: row });
         end
@@ -169,11 +170,11 @@ module mkAccumulatorMem(AccumulatorMemIfc#(banks, rows, accWidth));
         Int#(accWidth) value
     ) if (!isValid(pendingAccumulate) && writeCompletions.notFull);
         Bool addressValid =
-            bank < fromInteger(valueOf(banks))
-            && row < fromInteger(valueOf(rows));
+            bank <= fromInteger(valueOf(banks) - 1)
+            && row <= fromInteger(valueOf(rows) - 1);
         Bool accepted = False;
-        dynamicAssert(bank < fromInteger(valueOf(banks)), "accumulator write bank out of range");
-        dynamicAssert(row < fromInteger(valueOf(rows)), "accumulator write row out of range");
+        dynamicAssert(bank <= fromInteger(valueOf(banks) - 1), "accumulator write bank out of range");
+        dynamicAssert(row <= fromInteger(valueOf(rows) - 1), "accumulator write row out of range");
         for (Integer bankIndex = 0; bankIndex < valueOf(banks); bankIndex = bankIndex + 1) begin
             if (addressValid && bank == fromInteger(bankIndex)) begin
                 if (accumulate) begin

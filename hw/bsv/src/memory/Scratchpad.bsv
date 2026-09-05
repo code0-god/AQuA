@@ -1,12 +1,13 @@
 package Scratchpad;
 
 import Assert::*;
+import AquaLocalAddr::*;
 import FIFOF::*;
 import RegFile::*;
 import SpecialFIFOs::*;
 import Vector::*;
 
-typedef Bit#(TLog#(TAdd#(rows, 1))) ScratchpadRowAddr#(numeric type rows);
+typedef Bit#(MemoryAddrWidth#(rows)) ScratchpadRowAddr#(numeric type rows);
 
 interface ScratchpadBankIfc#(
     numeric type rows,
@@ -60,7 +61,7 @@ module mkScratchpadBank(ScratchpadBankIfc#(rows, lanes, element_t))
 
     method Action requestRead(ScratchpadRowAddr#(rows) row)
         if (readRequests.notFull && !writeAccepted);
-        dynamicAssert(row < fromInteger(valueOf(rows)), "scratchpad read row out of range");
+        dynamicAssert(row <= fromInteger(valueOf(rows) - 1), "scratchpad read row out of range");
         readRequests.enq(row);
     endmethod
 
@@ -81,7 +82,7 @@ module mkScratchpadBank(ScratchpadBankIfc#(rows, lanes, element_t))
         Vector#(lanes, Bool) mask,
         Vector#(lanes, element_t) data
     );
-        dynamicAssert(row < fromInteger(valueOf(rows)), "scratchpad write row out of range");
+        dynamicAssert(row <= fromInteger(valueOf(rows) - 1), "scratchpad write row out of range");
         for (Integer lane = 0; lane < valueOf(lanes); lane = lane + 1) begin
             if (mask[lane]) begin
                 laneMemories[lane].upd(row, data[lane]);
