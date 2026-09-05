@@ -1,12 +1,11 @@
 package SchedulerSynthTop;
 
 import MatmulScheduler::*;
-import WorkScheduler::*;
 
 (* synthesize *)
-module mkSchedulerSynthTop(Empty);
+module mkSchedulerSynthTop(MatmulSchedulerIfc#(16));
     MatmulSchedulerIfc#(16) matmul <- mkMatmulScheduler;
-    WorkSchedulerIfc#(16) work <- mkWorkScheduler;
+    return matmul;
 endmodule
 
 endpackage

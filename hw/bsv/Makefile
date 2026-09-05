@@ -203,6 +203,10 @@ rtl-one: | $(BUILD_DIR)/bsc $(BUILD_DIR)/info
 	$(BSC) -u -verilog -p $(BSC_PATH) \
 	  -bdir $(BUILD_DIR)/bsc -info-dir $(BUILD_DIR)/info \
 	  -vdir "$$out" -g "$$top" "tb/$$package.bsv"
+	@case "$(TOP)" in \
+	  mkSchedulerSynthTop|mkLoopMatmulSynthTop|mkMemorySubsystemSynthTop) \
+	    python3 scripts/audit-rtl.py "$(BUILD_DIR)/rtl/$(patsubst mk%,%,$(TOP))/$(TOP).v" ;; \
+	esac
 
 .PHONY: verify-test-harness bsv-test-expected-one
 
@@ -223,11 +227,15 @@ verify-test-harness: | $(BUILD_DIR)/test-logs
 	$(MAKE) bsv-test-expected-one TOP=mkTbAccumulatorOverflow; \
 	echo "PASS: verify-test-harness"
 
-verify: check bsv-test bsv-test-no-assert verify-test-harness
+.PHONY: rtl
+
+rtl:
 	@set -euo pipefail; \
 	for top in $(SYNTH_TOPS); do \
 	  $(MAKE) rtl-one TOP="$$top"; \
 	done
+
+verify: check bsv-test bsv-test-no-assert verify-test-harness rtl
 
 $(BUILD_DIR)/bsc $(BUILD_DIR)/sim $(BUILD_DIR)/info $(BUILD_DIR)/bin $(BUILD_DIR)/test-logs:
 	@mkdir -p "$@"
