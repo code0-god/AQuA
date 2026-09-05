@@ -149,10 +149,20 @@ residency와 할당 충돌 검증이 구현될 때만 슬롯 상태를 도입한
 
 `AquaTileSelector`는 별도의 호스트/런타임 하드웨어 정책이다. 독립적인 활성화, 가중치, HP1 메타데이터, 누산기, 전체 논리 K ExSIA 슬롯 용량을 검사하면서 Gemmini의 J-이후-I-이후-K 인수 증가 순서를 보존한다. 선택된 스트라이프 행은 ExSIA 실행 전에 검증된 `ActivationExecutionPlan`에 고정된다.
 
-`make -C hw/bsv verify`는 positive Bluesim, expected-failure, assertions-disabled
-safety test와 대표 BSC Verilog 생성을 검증한다. 이는 물리 FPGA synthesis
-검증이 아니다. BRAM inference, LUT/DSP 사용량, timing/Fmax와 post-synthesis
-area는 아직 측정하지 않았다.
+`make -C hw/bsv verify`의 BSC gate는 positive Bluesim, expected-failure,
+assertions-disabled safety test와 공개 wrapper의 BSC Verilog 생성을 대상으로
+한다. positive test는 명령 성공, 해당 top의 정확한 최종 `PASS: mkTb...` token,
+그리고 예상하지 않은 assertion/failure diagnostic 부재를 모두 만족해야 한다.
+expected-failure는 단순 nonzero가 아니라 의도한 runtime assertion 또는
+elaboration diagnostic을 관찰해야 하며, 각 top의 로그는 분리한다.
+
+RTL 생성은 물리 FPGA synthesis가 아니라 BSC elaboration/Verilog 생성의
+검증이다. `mkSchedulerSynthTop`과 `mkLoopMatmulSynthTop`은 각각 production
+`MatmulSchedulerIfc`와 `AquaLoopMatmulIfc` 전체를 공개한다.
+`mkMemorySubsystemSynthTop`은 runtime load/store, 네 typed provider read port,
+output write port와 accumulator를 공개하되, 선택적인 local scratchpad/HP1
+inspection port는 이 RTL gate에서 의도적으로 제외한다. BRAM inference,
+LUT/DSP 사용량, timing/Fmax와 post-synthesis area는 아직 측정하지 않았다.
 
 ## ExSIA 경계
 
@@ -179,6 +189,9 @@ Rust 참조 구현은 향후 BSV 구현을 위한 의미 체계 계약이다. AQ
 * WS 시스톨릭 배열과 PE 프리로드/재정렬은 연기되었으며, 이 기반에는 행렬 데이터패스 통합이 없다.
 * BSV ExSIA 및 BSV RaCo 실행은 비트 단위 정확한 데이터패스 단계로 연기되어 있다.
 * 단일-context `AquaLoopMatmul`의 매크로 K load/execute/final-store 제어와 acknowledgement 기반 retirement가 구현되어 있다. execute는 protocol과 testbench double뿐이며 실제 산술 datapath가 아니다.
+* 통합 시 loop work는 연결된 activation/weight/metadata/accumulator 메모리 기하에 들어맞아야 한다. loop는 각 depth configuration을 소유하거나 선택하지 않는다.
+* `StoreController`는 store drain 동안 accumulator read를 독점한다고 가정한다. 향후 동시 접근은 ownership 또는 tagged/arbitrated response 계약을 추가해야 한다.
+* synthetic executor는 control flow, accumulation lifecycle, completion correlation과 store retirement만 확인한다. 수치 matmul 결과나 HP1 정확성의 증명은 아니다.
 * resident macro-tile preload, activation/weight 재사용, 두 컨텍스트 중첩, 슬롯 할당과 물리 DMA는 연기되어 있다. 공급자 인터페이스는 논리적 시뮬레이션 경계이며 상호 연결 구현이 아니다.
 * 중간 텐서는 가속기에 상주하지 않는다.
 * ExSIF, KV-cache 오프로딩, UART, PCIe 또는 FPGA 보드 지원은 없다.

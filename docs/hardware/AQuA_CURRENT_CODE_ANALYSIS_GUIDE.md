@@ -1270,12 +1270,20 @@ future contract 재도입 조건은 항상 같다.
 
 # 19. 테스트와 검증
 
-positive simulation top 20개:
+각 positive invocation은 명령이 성공하고, 해당 top의 정확한 최종
+`PASS: mkTb...` token이 isolated log에 존재하며, 예상하지 않은 assertion 또는
+failure diagnostic이 없어야 성공이다. 단순 exit code 또는 다른 test의 PASS는
+성공 근거가 아니다. expected-failure는 단순 nonzero가 아니라 지정한 runtime
+assertion diagnostic 또는 elaboration diagnostic을 반드시 관찰해야 한다.
+
+positive simulation top 22개:
 
 ```text
 mkTbHardwareContracts
 mkTbHp1MetaMem
 mkTbLocalAddr
+mkTbMemoryDepth
+mkTbMemoryAddressWidth
 mkTbScratchpadBank
 mkTbAccumulatorMem
 mkTbAccumulatorBankGeometry
@@ -1295,7 +1303,8 @@ mkTbAquaMemorySubsystem
 mkTbLoopMatmulMemoryIntegration
 ```
 
-expected-failure top 19개:
+expected-failure top은 runtime 18개와 elaboration 5개를 합친 23개다.
+기존 19개 목록에는 `mkTbInvalidAccumulatorBankGeometry` elaboration 실패가 포함된다.
 
 ```text
 mkTbAccumulatorOverflow
@@ -1319,6 +1328,15 @@ mkTbWeightResponseMaskMismatch
 mkTbMetadataResponseMaskMismatch
 ```
 
+추가 zero-depth elaboration top은 다음 diagnostic을 요구한다.
+
+```text
+mkScratchpadZeroDepth    : scratchpad rows must be positive
+mkHp1BlockZeroDepth      : HP1 block entries must be positive
+mkHp1RowZeroDepth        : HP1 row entries must be positive
+mkAccumulatorZeroDepth   : accumulator rows must be positive
+```
+
 assertions-disabled RTL safety top 6개:
 
 ```text
@@ -1330,18 +1348,30 @@ mkTbMatmulInvalidInputGate
 mkTbLoopInvalidCompletionGate
 ```
 
-BSC RTL generation top 4개:
+BSC RTL generation top 5개:
 
 ```text
 mkMemorySynthTop
 mkSchedulerSynthTop
 mkMemorySubsystemSynthTop
 mkLoopMatmulSynthTop
+mkMemoryMaxDepthSynthTop
 ```
 
-이 top들은 BSC Verilog 생성까지 검증한다. BRAM inference, LUT/DSP 사용량,
-timing/Fmax 및 post-synthesis area를 포함하는 물리 FPGA synthesis는 아직
-검증하지 않았다.
+`mkSchedulerSynthTop`과 `mkLoopMatmulSynthTop`은 production interface 전체를
+노출한다. `mkMemorySubsystemSynthTop`은 runtime load/store, 네 typed provider
+port, output port 및 accumulator를 노출하고 optional local scratchpad/HP1
+inspection은 의도적으로 제외한다. 세 public wrapper의 port audit은 public
+contract만 검사한다. 이 top들은 BSC Verilog 생성까지 검증하며, BRAM inference,
+LUT/DSP 사용량, timing/Fmax 및 post-synthesis area를 포함하는 물리 FPGA
+synthesis는 아직 검증하지 않았다.
+
+모든 RegFile은 정확히 `0 .. depth - 1` 범위를 사용하고 positive
+depth static assertion을 가져야 한다. `AquaLocalAddr`의
+`MemoryAddrWidth#(depth) = TMax#(1, TLog#(depth))`는 depth 1/8/17/65536에서
+1/3/5/16 bit를 요구한다. 최대 유효 row 65535와 invalid row 65536은 wider
+controller arithmetic에서 구분하며, minimum 1 bit는 BSC RegFile의 zero-width
+허용 여부와 별개의 AQuA 정책이다.
 
 ```bash
 make -C hw/bsv bsv-test-one TOP=mkTbMatmulScheduler
@@ -1351,13 +1381,24 @@ make -C hw/bsv bsv-test-one TOP=mkTbLoadController
 make -C hw/bsv bsv-test-one TOP=mkTbAquaMemorySubsystem
 make -C hw/bsv bsv-test-no-assert
 make -C hw/bsv verify
+make -C hw/bsv verify-memory-depth
 ```
+
+`verify-address-width`는 최대 depth의 StoreController RTL 생성과
+RegFile 주소 폭/범위를 검사한다.
 
 검증할 핵심은 J-before-I-before-macro-K-before-macro-N, partial edge,
 block-bounded K, fragment-local DIM16/32/64 실행, exact completion matching,
 final-K-only store, output ack retirement, async stripe lifecycle, consume 전
 response rejection, delayed exact response, wrong-tag 차단, channel independence,
 metadata reuse/vector 보존, masked write와 checked overflow다.
+
+통합에서 loop work는 연결된 memory geometry 안에 들어와야 하며 loop가 depth
+configuration을 소유하지 않는다. store drain은 accumulator read의 독점을
+가정한다. 향후 동시 접근은 ownership 또는 tagged/arbitrated response 계약이
+필요하다. synthetic executor의 범위는 control flow, accumulation lifecycle,
+completion correlation, store retirement이며 numerical matmul 또는 HP1
+correctness는 포함하지 않는다.
 
 ---
 

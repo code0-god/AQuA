@@ -172,10 +172,67 @@ folded row로 바꾸는 bank folding은 구현하지 않는다.
 
 ## RTL 생성과 물리 합성
 
-현재 gate는 positive Bluesim, expected-failure, assertions-disabled safety
-test와 대표 top의 BSC Verilog 생성을 포함한다. 이 결과는 RTL elaboration과
-생성을 검증하지만 물리 FPGA synthesis를 검증하지 않는다. BRAM inference,
-LUT/DSP 사용량, timing/Fmax 및 post-synthesis area는 아직 측정하지 않았다.
+현재 BSC RTL gate는 인터페이스가 구체적인 public wrapper로 노출되는지를
+포함해 elaboration과 Verilog 생성을 확인한다. `mkSchedulerSynthTop`은
+`MatmulSchedulerIfc#(16)` 전체를, `mkLoopMatmulSynthTop`은
+`AquaLoopMatmulIfc#(16)` 전체를 그대로 공개한다. 따라서 scheduler/loop의
+일부 debug 또는 축소된 test API만 생성하는 gate가 아니다.
+
+`mkMemorySubsystemSynthTop`은 runtime 경계만 공개한다.
+
+```text
+loadReady / scheduleLoad / LoadCompletion
+activationPort / weightPort / blockShiftPort / rowShiftPort
+storeReady / scheduleStore / outputPort / StoreCompletion
+AccumulatorMem
+```
+
+네 provider port는 payload 타입으로 구분된 production port이고, accumulator는
+store drain 경계를 검토하기 위해 공개한다. 반대로 activation/weight local
+scratchpad와 HP1 metadata의 선택적인 inspection port는 이 RTL gate의 public
+계약이 아니므로 의도적으로 노출하지 않는다. public port audit은 이 세 wrapper를
+대상으로 한다.
+
+이는 RTL elaboration/생성 검증일 뿐 물리 FPGA synthesis 검증은 아니다. BRAM
+inference, LUT/DSP 사용량, timing/Fmax 및 post-synthesis area는 아직 측정하지
+않았다.
+
+## RegFile depth와 주소 폭 계약
+
+로컬 저장소의 실제 RegFile 범위는 depth entry에 대해 정확히
+`0 .. depth - 1`이다. `0 .. depth`처럼 한 entry를 더 만들지 않는다. 모든
+storage depth는 양수라는 static assertion을 가져야 한다.
+
+`AquaLocalAddr` 패키지의 공통 type-level helper는 다음과 같다.
+
+```text
+MemoryAddrWidth#(depth) = TMax#(1, TLog#(depth))
+```
+
+이는 depth 1에서도 주소 type을 최소 1 bit로 유지하는 정책이다. BSC
+`RegFile` 자체는 zero-width type을 지원할 수 있으나, AQuA local-memory public
+주소 계약의 최소 폭은 1 bit다. static width 검사는 depth 1/8/17/65536에
+대해 각각 1/3/5/16 bit를 요구한다.
+
+16-bit local row의 최대 유효 주소는 65535다. 65536은 storage index로
+truncate해서 검사하지 않고 controller의 더 넓은 산술에서 invalid로 판정해야
+한다. zero depth는 별도 expected elaboration diagnostic으로 거부한다.
+
+## Integration assumptions / deferred contracts
+
+`AquaLoopMatmul`이 생성하는 work는 연결된 activation, weight, HP1 metadata와
+accumulator의 실제 메모리 기하 안에 들어와야 한다. loop는 depth configuration의
+owner가 아니며, 그 값을 선택하거나 재구성하지 않는다.
+향후 tile-residency 통합에서 어느 계층이 이 용량 조건을 강제할지 결정한다.
+
+`StoreController`는 store drain 동안 accumulator read를 독점한다고 가정한다.
+향후 execute 또는 다른 consumer와 accumulator를 동시 접근시키려면 명시적인
+ownership 또는 tagged/arbitrated response 계약을 도입해야 한다.
+
+현재 synthetic executor는 control flow, accumulation lifecycle, completion
+correlation 및 store retirement를 확인한다. numerical matmul 결과나 HP1
+데이터 정확성을 검증하지 않으며, 그 증명은 production arithmetic/HP1 경로의
+별도 계약이다.
 
 ## 메모리 수명
 
