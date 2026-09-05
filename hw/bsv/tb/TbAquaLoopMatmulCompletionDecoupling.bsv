@@ -199,7 +199,7 @@ module mkTbAquaLoopMatmulCompletionDecoupling(Empty);
         dynamicAssert(loadCount == 4, "decoupled load count");
         dynamicAssert(executeCount == 4, "decoupled execute count");
         dynamicAssert(storeCount == 2, "decoupled store count");
-        $display("PASS mkTbAquaLoopMatmulCompletionDecoupling");
+        $display("PASS: mkTbAquaLoopMatmulCompletionDecoupling");
         $finish(0);
     endrule
 

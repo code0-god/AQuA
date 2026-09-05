@@ -181,7 +181,7 @@ module mkTbWorkScheduler(Empty);
 
     rule finish(step == 22 && dut16.doneValid);
         dut16.consumeDone;
-        $display("PASS mkTbWorkScheduler");
+        $display("PASS: mkTbWorkScheduler");
         $finish(0);
     endrule
 endmodule

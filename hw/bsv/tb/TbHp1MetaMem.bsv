@@ -75,7 +75,7 @@ module mkTbHp1MetaMem(Empty);
         dynamicAssert(rows[3] == 15, "masked row lane changed");
         dynamicAssert(rows[15] == 15, "last masked row lane changed");
 
-        $display("PASS mkTbHp1MetaMem");
+        $display("PASS: mkTbHp1MetaMem");
         $finish(0);
     endrule
 endmodule

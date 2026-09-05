@@ -38,7 +38,7 @@ module mkTbStoreInvalidWorkGate(Empty);
 
     rule verifyRejected(step == 1);
         if (dut.startReady && !dut.outputPort.requests.valid) begin
-            $display("PASS mkTbStoreInvalidWorkGate");
+            $display("PASS: mkTbStoreInvalidWorkGate");
             $finish(0);
         end
         else begin

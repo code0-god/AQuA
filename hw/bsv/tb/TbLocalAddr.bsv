@@ -19,7 +19,7 @@ module mkTbLocalAddr(Empty);
         dynamicAssert(mapped.bank == 3, "global row bank mismatch");
         dynamicAssert(mapped.row == 1, "global row local row mismatch");
 
-        $display("PASS mkTbLocalAddr");
+        $display("PASS: mkTbLocalAddr");
         $finish(0);
     endrule
 endmodule

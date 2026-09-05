@@ -33,7 +33,7 @@ module mkTbAccumulatorBankGeometry(Empty);
     ) dim64 <- mkAquaMemorySubsystem;
 
     rule finish;
-        $display("PASS mkTbAccumulatorBankGeometry");
+        $display("PASS: mkTbAccumulatorBankGeometry");
         $finish(0);
     endrule
 endmodule

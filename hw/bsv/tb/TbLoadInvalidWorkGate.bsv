@@ -61,7 +61,7 @@ module mkTbLoadInvalidWorkGate(Empty);
             && !dut.blockShiftPort.requests.valid
             && !dut.rowShiftPort.requests.valid;
         if (dut.loadReady && noRequests) begin
-            $display("PASS mkTbLoadInvalidWorkGate");
+            $display("PASS: mkTbLoadInvalidWorkGate");
             $finish(0);
         end
         else begin

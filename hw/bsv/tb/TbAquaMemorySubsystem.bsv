@@ -348,7 +348,7 @@ module mkTbAquaMemorySubsystem(Empty);
     endrule
 
     rule finish(storeDone && verifyStep == 5);
-        $display("PASS mkTbAquaMemorySubsystem");
+        $display("PASS: mkTbAquaMemorySubsystem");
         $finish(0);
     endrule
 

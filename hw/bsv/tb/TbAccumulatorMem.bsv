@@ -74,7 +74,7 @@ module mkTbAccumulatorMem(Empty);
     rule checkSecond(step == 12 && dut.readValid);
         dynamicAssert(dut.readResponse.value == -9, "bank isolation mismatch");
         dut.consumeRead;
-        $display("PASS mkTbAccumulatorMem");
+        $display("PASS: mkTbAccumulatorMem");
         $finish(0);
     endrule
 endmodule

@@ -37,7 +37,7 @@ module mkTbWorkRangeOverflowGate(Empty);
             && !dut.lookaheadValid
             && !dut.doneValid
         ) begin
-            $display("PASS mkTbWorkRangeOverflowGate");
+            $display("PASS: mkTbWorkRangeOverflowGate");
             $finish(0);
         end
         else begin

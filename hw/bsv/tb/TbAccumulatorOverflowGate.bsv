@@ -41,7 +41,7 @@ module mkTbAccumulatorOverflowGate(Empty);
 
     rule verifyPreserved(step == 4 && dut.readValid);
         if (dut.readResponse.value == 127) begin
-            $display("PASS mkTbAccumulatorOverflowGate");
+            $display("PASS: mkTbAccumulatorOverflowGate");
             $finish(0);
         end
         else begin

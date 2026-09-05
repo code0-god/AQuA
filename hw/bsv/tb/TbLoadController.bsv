@@ -314,7 +314,7 @@ module mkTbLoadController(Empty);
     rule finish(phase == 5 && !running);
         dynamicAssert(dut.outstandingCycles > 0,
                       "provider staging cycles were not counted");
-        $display("PASS mkTbLoadController");
+        $display("PASS: mkTbLoadController");
         $finish(0);
     endrule
 

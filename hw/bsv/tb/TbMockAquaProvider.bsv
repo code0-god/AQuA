@@ -76,7 +76,7 @@ module mkTbMockAquaProvider(Empty);
                       "one-cycle response latency mismatch");
         dynamicAssert(fromMaybe(?, fixedSeen) == 5,
                       "fixed response/backpressure timing mismatch");
-        $display("PASS mkTbMockAquaProvider");
+        $display("PASS: mkTbMockAquaProvider");
         $finish(0);
     endrule
 

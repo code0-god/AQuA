@@ -76,7 +76,7 @@ module mkTbHardwareContracts(Empty);
             "execute completion pack round trip"
         );
         dynamicAssert(aquaBlockSize == 32, "runtime block size mismatch");
-        $display("PASS mkTbHardwareContracts");
+        $display("PASS: mkTbHardwareContracts");
         $finish(0);
     endrule
 endmodule

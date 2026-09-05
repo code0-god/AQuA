@@ -95,7 +95,7 @@ module mkTbAquaLoopMatmulDim32(Empty);
     endrule
 
     rule finish(step == 8 && dut.startReady);
-        $display("PASS mkTbAquaLoopMatmulDim32");
+        $display("PASS: mkTbAquaLoopMatmulDim32");
         $finish(0);
     endrule
 

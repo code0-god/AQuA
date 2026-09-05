@@ -107,7 +107,8 @@ bsv-test: | $(BUILD_DIR)/bsc $(BUILD_DIR)/sim $(BUILD_DIR)/info $(BUILD_DIR)/bin
 	  $(BSC) -sim $(BSC_COMMON) -e "$$top" \
 	    -o "$(BUILD_DIR)/bin/$$package"; \
 	  echo "[Bluesim] run $$top"; \
-	  "$(BUILD_DIR)/bin/$$package"; \
+	  bash scripts/run-test.sh positive "$$top" \
+	    "$(BUILD_DIR)/test-logs/$$top.log" "$(BUILD_DIR)/bin/$$package"; \
 	done; \
 	for top in $(BSV_EXPECT_FAIL_TOPS); do \
 	  package="$${top#mk}"; \
@@ -151,13 +152,8 @@ bsv-test: | $(BUILD_DIR)/bsc $(BUILD_DIR)/sim $(BUILD_DIR)/info $(BUILD_DIR)/bin
 	    mkTbMetadataResponseMaskMismatch) expected='metadata response mask does not match requested J count' ;; \
 	    *) echo "missing expected failure text for $$top" >&2; exit 2 ;; \
 	  esac; \
-	  output="$$("$(BUILD_DIR)/bin/$$package" 2>&1)"; \
-	  printf '%s\n' "$$output"; \
-	  if [[ "$$output" != *"Dynamic assertion failed"* \
-	        || "$$output" != *"$$expected"* ]]; then \
-	    echo "$$top did not trigger its expected assertion" >&2; \
-	    exit 1; \
-	  fi; \
+	  bash scripts/run-test.sh expected "$$expected" \
+	    "$(BUILD_DIR)/test-logs/$$top.log" "$(BUILD_DIR)/bin/$$package"; \
 	  echo "PASS expected failure $$top"; \
 	done
 
@@ -169,7 +165,8 @@ bsv-test-one: | $(BUILD_DIR)/bsc $(BUILD_DIR)/sim $(BUILD_DIR)/info $(BUILD_DIR)
 	$(BSC) -u -sim $(BSC_COMMON) -g "$$top" "tb/$$package.bsv"; \
 	$(BSC) -sim $(BSC_COMMON) -e "$$top" \
 	  -o "$(BUILD_DIR)/bin/$$package"; \
-	"$(BUILD_DIR)/bin/$$package"
+	bash scripts/run-test.sh positive "$(TOP)" \
+	  "$(BUILD_DIR)/test-logs/$(TOP).log" "$(BUILD_DIR)/bin/$$package"
 
 bsv-test-no-assert: | $(BUILD_DIR)/bsc $(BUILD_DIR)/sim $(BUILD_DIR)/info $(BUILD_DIR)/bin
 	@set -euo pipefail; \
@@ -180,7 +177,8 @@ bsv-test-no-assert: | $(BUILD_DIR)/bsc $(BUILD_DIR)/sim $(BUILD_DIR)/info $(BUIL
 	  $(BSC) -sim $(BSC_NO_ASSERT) -e "$$top" \
 	    -o "$(BUILD_DIR)/bin/$$package"; \
 	  echo "[Bluesim no-assert] run $$top"; \
-	  "$(BUILD_DIR)/bin/$$package"; \
+	  bash scripts/run-test.sh positive "$$top" \
+	    "$(BUILD_DIR)/test-logs/$$top.log" "$(BUILD_DIR)/bin/$$package"; \
 	done
 
 bsv-test-no-assert-one: | $(BUILD_DIR)/bsc $(BUILD_DIR)/sim $(BUILD_DIR)/info $(BUILD_DIR)/bin
@@ -191,7 +189,8 @@ bsv-test-no-assert-one: | $(BUILD_DIR)/bsc $(BUILD_DIR)/sim $(BUILD_DIR)/info $(
 	$(BSC) -u -sim $(BSC_NO_ASSERT) -g "$$top" "tb/$$package.bsv"; \
 	$(BSC) -sim $(BSC_NO_ASSERT) -e "$$top" \
 	  -o "$(BUILD_DIR)/bin/$$package"; \
-	"$(BUILD_DIR)/bin/$$package"
+	bash scripts/run-test.sh positive "$(TOP)" \
+	  "$(BUILD_DIR)/test-logs/$(TOP).log" "$(BUILD_DIR)/bin/$$package"
 
 rtl-one: | $(BUILD_DIR)/bsc $(BUILD_DIR)/info
 	@set -euo pipefail; \
@@ -205,13 +204,32 @@ rtl-one: | $(BUILD_DIR)/bsc $(BUILD_DIR)/info
 	  -bdir $(BUILD_DIR)/bsc -info-dir $(BUILD_DIR)/info \
 	  -vdir "$$out" -g "$$top" "tb/$$package.bsv"
 
-verify: check bsv-test bsv-test-no-assert
+.PHONY: verify-test-harness bsv-test-expected-one
+
+bsv-test-expected-one:
+	@test -n "$(TOP)" || { echo "set TOP=mkTb..." >&2; exit 1; }
+	@$(MAKE) bsv-test BSV_TEST_TOPS= BSV_EXPECT_FAIL_TOPS="$(TOP)"
+
+verify-test-harness: | $(BUILD_DIR)/test-logs
+	@bash scripts/test-runner.sh "$(BUILD_DIR)/test-logs"
+	@set -euo pipefail; \
+	log="$(BUILD_DIR)/test-logs/harness-positive.log"; \
+	if $(MAKE) bsv-test-one TOP=mkTbAccumulatorOverflow >"$$log" 2>&1; then \
+	  cat "$$log"; \
+	  echo "overflow incorrectly passed the positive runner" >&2; \
+	  exit 1; \
+	fi; \
+	grep -Fq 'Dynamic assertion failed' "$$log"; \
+	$(MAKE) bsv-test-expected-one TOP=mkTbAccumulatorOverflow; \
+	echo "PASS: verify-test-harness"
+
+verify: check bsv-test bsv-test-no-assert verify-test-harness
 	@set -euo pipefail; \
 	for top in $(SYNTH_TOPS); do \
 	  $(MAKE) rtl-one TOP="$$top"; \
 	done
 
-$(BUILD_DIR)/bsc $(BUILD_DIR)/sim $(BUILD_DIR)/info $(BUILD_DIR)/bin:
+$(BUILD_DIR)/bsc $(BUILD_DIR)/sim $(BUILD_DIR)/info $(BUILD_DIR)/bin $(BUILD_DIR)/test-logs:
 	@mkdir -p "$@"
 
 clean:

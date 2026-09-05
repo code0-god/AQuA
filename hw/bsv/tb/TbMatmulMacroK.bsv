@@ -215,7 +215,7 @@ module mkTbMatmulMacroK(Empty);
     rule finish(
         singleDone && partitionDone && smallDone && orderingDone
     );
-        $display("PASS mkTbMatmulMacroK");
+        $display("PASS: mkTbMatmulMacroK");
         $finish(0);
     endrule
 

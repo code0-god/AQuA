@@ -385,7 +385,7 @@ module mkTbMatmulInvalidInputGate(Empty);
         && boundsDone
         && idDone
     );
-        $display("PASS mkTbMatmulInvalidInputGate");
+        $display("PASS: mkTbMatmulInvalidInputGate");
         $finish(0);
     endrule
 

@@ -389,7 +389,7 @@ module mkTbMatmulScheduler(Empty);
     rule finish(
         fullDone && asyncDone && macroNDone && macroNEdgeDone
     );
-        $display("PASS mkTbMatmulScheduler");
+        $display("PASS: mkTbMatmulScheduler");
         $finish(0);
     endrule
 

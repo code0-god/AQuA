@@ -219,7 +219,7 @@ module mkTbLoopInvalidCompletionGate(Empty);
     endrule
 
     rule finish(step == 14 && dut.startReady);
-        $display("PASS mkTbLoopInvalidCompletionGate");
+        $display("PASS: mkTbLoopInvalidCompletionGate");
         $finish(0);
     endrule
 

@@ -61,7 +61,7 @@ module mkTbAquaLoopAccumulatorMapping(Empty);
             !accumulatorBaseValid(overflow, 16),
             "overflowing accumulator mapping accepted"
         );
-        $display("PASS mkTbAquaLoopAccumulatorMapping");
+        $display("PASS: mkTbAquaLoopAccumulatorMapping");
         $finish(0);
     endrule
 endmodule

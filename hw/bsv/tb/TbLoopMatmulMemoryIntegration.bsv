@@ -399,7 +399,7 @@ module mkTbLoopMatmulMemoryIntegration(Empty);
             !memory.storeCompletionValid,
             "memory store completion remained pending"
         );
-        $display("PASS mkTbLoopMatmulMemoryIntegration");
+        $display("PASS: mkTbLoopMatmulMemoryIntegration");
         $finish(0);
     endrule
 

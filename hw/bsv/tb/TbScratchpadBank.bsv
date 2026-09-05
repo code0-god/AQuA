@@ -95,7 +95,7 @@ module mkTbScratchpadBank(Empty);
     rule checkLastRow(step == 11 && dut.readValid);
         dynamicAssert(dut.readData == firstRow, "last bank-local row mismatch");
         dut.consumeRead;
-        $display("PASS mkTbScratchpadBank");
+        $display("PASS: mkTbScratchpadBank");
         $finish(0);
     endrule
 endmodule

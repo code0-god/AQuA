@@ -166,7 +166,7 @@ module mkTbStoreController(Empty);
         dynamicAssert(completion.arrayWorkId == 12,
                       "store completion array work mismatch");
         dut.consumeCompletion;
-        $display("PASS mkTbStoreController");
+        $display("PASS: mkTbStoreController");
         $finish(0);
     endrule
 

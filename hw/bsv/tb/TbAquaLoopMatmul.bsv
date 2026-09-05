@@ -252,7 +252,7 @@ module mkTbAquaLoopMatmul(Empty);
         dynamicAssert(loadCount == 5, "load count");
         dynamicAssert(executeCount == 5, "execute count");
         dynamicAssert(storeCount == 1, "store count");
-        $display("PASS mkTbAquaLoopMatmul");
+        $display("PASS: mkTbAquaLoopMatmul");
         $finish(0);
     endrule
 

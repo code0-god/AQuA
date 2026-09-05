@@ -140,7 +140,7 @@ module mkTbAquaLoopMatmulAsync(Empty);
     endrule
 
     rule finish(step == 10 && dut.startReady);
-        $display("PASS mkTbAquaLoopMatmulAsync");
+        $display("PASS: mkTbAquaLoopMatmulAsync");
         $finish(0);
     endrule
 
